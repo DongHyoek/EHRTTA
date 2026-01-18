@@ -3,5 +3,7 @@
 
 *My plan follows the architectures described below. Let's go!*
 
-
 ![image](./images/blueprint.png)
+
+# Overall Architecture
+![image](./images/figure.png)
