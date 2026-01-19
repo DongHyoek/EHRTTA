@@ -6,4 +6,4 @@
 ![image](./images/blueprint.png)
 
 # Overall Architecture
-![image](./images/figure.png)
+![image](./images/architecture.png)
