@@ -15,7 +15,7 @@ class TextGeneration(nn.Module):
     build_patient_markdown_summary : To generate the text summary for lab & output event, it's inputs need to observation dataframe, static dataframe, concept dict dataframe, lab variable name list.
     """
     def __init__(self, time_col: str = "charttime", id_col: str = "stay_id", var_col: str = "full_var_name", val_col: str = "value", unit_col: str = "fixed_unit", 
-                 normal_min : str = 'normal_min', normal_max : str = 'normal_max', round_ndigits: int = 2):
+                 normal_min : str = 'normal_min', normal_max : str = 'normal_max', round_ndigits: int = 1):
         # --- Input dataframe column names ---
         # charttime is already "minutes since admission" (int)
         self.time_col = time_col     # minutes since ICU admission (int)
