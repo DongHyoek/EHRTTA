@@ -1,12 +1,246 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn.utils import weight_norm
+import numpy as np
+import pandas as pd
 import math
 import sys
 
-# class TextEmbedding(nn.Module):
-#     def __init__(self, )
+from dataclasses import dataclass
+from typing import Dict, Optional, Tuple, Set, Any
+from torch.nn.utils import weight_norm
+
+class TextGeneration(nn.Module):
+    """
+    build_patient_markdown_summary : To generate the text summary for lab & output event, it's inputs need to observation dataframe, static dataframe, concept dict dataframe, lab variable name list.
+    """
+    def __init__(self, time_col: str = "charttime", id_col: str = "stay_id", var_col: str = "full_var_name", val_col: str = "value", unit_col: str = "fixed_unit", 
+                 normal_min : str = 'normal_min', normal_max : str = 'normal_max', round_ndigits: int = 2):
+        # --- Input dataframe column names ---
+        # charttime is already "minutes since admission" (int)
+        self.time_col = time_col     # minutes since ICU admission (int)
+        self.id_col = id_col
+        self.var_col = var_col
+        self.val_col = val_col
+        self.unit_col = unit_col
+        self.normal_min  = normal_min
+        self.normal_max  = normal_max
+
+
+        # --- Formatting ---
+        self.round_ndigits = round_ndigits
+
+    def build_patient_markdown_summary(self, observations: pd.DataFrame, demographics: pd.DataFrame, mapping_df : pd.DataFrame, labs_title: str = "Summary of Lab Results", 
+                                       lab_var_list: Optional[list[str]] = None, output_var_names: Optional[Set[str]] = ['Urine output']) -> str:
+        
+        """
+        observations: one patient's observation rows
+        - must include: self.time_col (minutes), self.var_col, self.val_col
+        demographics: {"Age":..., "Gender":..., "Weight":..., "Height":...}
+        normal_ranges: {"WBC": (4,11), ...}
+        output_var_names: variables to treat as "Output Events" section
+        """
+
+        output_var_names = output_var_names or set()
+
+        df = observations.copy()
+        df[self.val_col] = pd.to_numeric(df[self.val_col], errors="coerce")
+        df[self.time_col] = pd.to_numeric(df[self.time_col], errors="coerce")  # ensure numeric minutes
+
+        # ----------------------------
+        # Header: demographics
+        # ----------------------------
+        md_lines = []
+        md_lines.append("# Patient Demographics at ICU Admission\n")
+        md_lines.append(f"- Age : {self.fmt_number(demographics[demographics['full_var_name'] == 'Age']['value'].values[0])}")
+        md_lines.append(f"- Gender : {demographics[demographics['full_var_name'] == 'Sex']['value'].values[0]}")
+
+        try:
+            md_lines.append(f"- Weight : {self.fmt_number(demographics[demographics['full_var_name'] == 'Weight']['value'].values[0])}kg")
+        except:
+            md_lines.append(f"- Weight : Not observed")
+        
+        try:
+            md_lines.append(f"- Height : {self.fmt_number(demographics[demographics['full_var_name'] == 'Height']['value'].values[0])}cm \n")
+        except:
+            md_lines.append(f"- Height : Not observed")
+
+        md_lines.append("")
+
+        # ----------------------------
+        # Split labs vs outputs
+        # ----------------------------
+        is_output = df[self.var_col].isin(output_var_names)
+        labs_df = df[~is_output].copy()
+        output_df = df[is_output].copy()
+
+
+        mapping_key = self.var_col  # "full_var_name"
+
+        meta_cols = [self.unit_col, self.normal_min, self.normal_max]
+        meta_cols = [c for c in meta_cols if c in mapping_df.columns]
+
+        var_meta = (
+            mapping_df.drop_duplicates(subset=[mapping_key])
+                    .set_index(mapping_key)[meta_cols]
+                    .to_dict(orient="index"))
+        
+        def _render_variable_section(title: str, section_df: pd.DataFrame, var_list: list[str]) -> list[str]:
+            section_lines = [f"# {title}"]
+
+            for var_name in var_list:
+                # 1) metadata from MappingDF (unit + normal range)
+                meta = var_meta.get(var_name, {})
+                unit_str = meta.get(self.unit_col, "") if meta else ""
+                ref_min = meta.get(self.normal_min, None) if meta else None
+                ref_max = meta.get(self.normal_max, None) if meta else None
+
+                # 2) patient rows for this var (may be empty)
+                var_rows = section_df[section_df[self.var_col] == var_name]
+
+                section_lines.append(f"- [{var_name}] ({unit_str})\n")
+                section_lines.append(
+                    f"\t- Normal Value Range : {self.fmt_number(ref_min, self.round_ndigits, 'normal_min')} to {self.fmt_number(ref_max, self.round_ndigits, 'normal_max')}"
+                )
+
+                # 3) if no observations -> keep unit/range, but stats/time are Not observed
+                n_valid = int(var_rows[self.val_col].notna().sum()) if not var_rows.empty else 0
+                if n_valid == 0:
+                    section_lines.append("\t- (Not observed)")
+                    continue
+
+                # 4) has observations -> compute features
+                feats = self.compute_variable_features(var_rows, self)
+                section_lines.append(
+                    f"\t- First/Last Obs : {self.fmt_number(feats['first_min'], 0)} / {self.fmt_number(feats['last_min'], 0)}, "
+                    f"N : {self.fmt_number(feats['n_obs'], 0)}, Interval : {self.fmt_number(feats['interval_mean_min'], 0)}"
+                )
+
+                vs = feats["value_stats"]
+                section_lines.append(
+                    "\t- Statistics: "
+                    f"[{self.fmt_number(vs['min'], self.round_ndigits)}, {self.fmt_number(vs['max'], self.round_ndigits)}, "
+                    f"{self.fmt_number(vs['median'], self.round_ndigits)}, {self.fmt_number(vs['mean'], self.round_ndigits)}, "
+                    f"{self.fmt_number(vs['std'], self.round_ndigits)}]"
+                )
+                section_lines.append("")
+
+            return section_lines
+    
+        md_lines.append("## Time unit : minutes after admission, Obs : Observation Time, N : observation count, "
+                        "Interval : mean interval between observations, Statistics : [min, max, median, mean, std]")
+        md_lines += _render_variable_section(labs_title, labs_df, lab_var_list)
+        md_lines.append("")  # spacer
+        md_lines += _render_variable_section("Summary of Output Events", output_df, ['Urine output'])
+
+        return "\n".join(md_lines).strip()
+
+    def fmt_number(self, x: Any, ndigits: int = 3, type='measurement') -> str:
+        """Format numbers; use 'Not observed' for None/NaN."""
+        
+        if x is None and type == 'measurement':
+            return "Not observed"
+        
+        if pd.isna(x) and type == 'normal_max':
+            return "inf"
+        
+        if pd.isna(x) and type == 'normal_min':
+            return "-inf"
+
+        try:
+            if isinstance(x, float) and np.isnan(x):
+                return "Not observed"
+        except Exception:
+            pass
+
+        if isinstance(x, (int, np.integer)):
+            return str(int(x))
+
+        try:
+            return f"{float(x):.{ndigits}f}"
+        except Exception:
+            return "Not observed"
+
+
+    def nan_stats(self, x: np.ndarray) -> Dict[str, Optional[float]]:
+        """Return min/max/mean/std on numeric array, ignoring NaNs."""
+        x = np.asarray(x, dtype=float)
+        x = x[~np.isnan(x)]
+        if x.size == 0:
+            return {"min": None, "max": None, 'median' : None ,"mean": None, "std": None}
+
+        std = float(np.std(x, ddof=1)) if x.size > 1 else 0.0
+        return {
+            "min": float(np.min(x)),
+            "max": float(np.max(x)),
+            'median' : float(np.median(x)),
+            "mean": float(np.mean(x)),
+            "std": std,
+        }
+    
+    def compute_variable_features(self, var_df: pd.DataFrame) -> Dict[str, Any]:
+
+        """
+        Compute summary features for ONE variable group.
+        Assumption: self.time_col is already minutes (int) since admission.
+        """
+        df_sorted = var_df.sort_values(self.time_col).copy()
+
+        times_min = pd.to_numeric(df_sorted[self.time_col], errors="coerce").to_numpy(dtype=float)
+        values = pd.to_numeric(df_sorted[self.val_col], errors="coerce").to_numpy(dtype=float)
+
+        # observation count (non-NaN values)
+        n_obs = int(np.sum(~np.isnan(values)))
+
+        # first/last time (minutes)
+        first_min = float(times_min[0]) if times_min.size else None
+        last_min = float(times_min[-1]) if times_min.size else None
+
+        # interval mean (unique time 기준)
+        unique_times = np.unique(times_min[~np.isnan(times_min)])
+        if unique_times.size >= 2:
+            interval_mean_min = float(np.mean(np.diff(unique_times)))
+        else:
+            interval_mean_min = None
+
+        # value stats
+        value_stats = self.nan_stats(values)
+
+        # # slope stats: Δy / Δt (dt>0)
+        # slopes = np.array([], dtype=float)
+        # if times_min.size >= 2:
+        #     dt = np.diff(times_min)
+        #     dy = np.diff(values)
+        #     mask = (~np.isnan(dt)) & (~np.isnan(dy)) & (dt > 0)
+        #     if np.any(mask):
+        #         slopes = dy[mask] / dt[mask]
+        # slope_stats = self.nan_stats(slopes) if slopes.size else {"min": None, "max": None, "mean": None, "std": None}
+
+        # # variability stats
+        # if self.variability_mode == "abs_delta":
+        #     variability_seq = np.abs(np.diff(values))
+        #     variability_seq = variability_seq[~np.isnan(variability_seq)]
+        # elif self.variability_mode == "rolling_std":
+        #     rolling_std = (
+        #         pd.Series(values)
+        #         .rolling(self.rolling_window, min_periods=self.min_points_for_stats)
+        #         .std()
+        #         .to_numpy(dtype=float)
+        #     )
+        #     variability_seq = rolling_std[~np.isnan(rolling_std)]
+        # else:
+        #     raise ValueError("variability_mode must be 'abs_delta' or 'rolling_std'")
+
+        # variability_stats = self.nan_stats(variability_seq) if variability_seq.size else {"min": None, "max": None, "mean": None, "std": None}
+
+        return {
+            "first_min": first_min,
+            "last_min": last_min,
+            "n_obs": n_obs,
+            "interval_mean_min": interval_mean_min,
+            "value_stats": value_stats
+            }
+
 
 class PositionalEmbedding(nn.Module):
     def __init__(self, d_model, max_len=5000):
