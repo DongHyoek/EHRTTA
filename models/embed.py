@@ -482,7 +482,7 @@ class DataEmbedding_ITS_Ind_VarPrompt_indicator(nn.Module):
         x = torch.cat([vars_prompt, x], dim=1)
         # print(x.shape)
         x = x.permute(0, 2, 1, 3).reshape(B*D, L+1, self.d_model) # (B*D, L+1, d_model)
- 
+
         return self.dropout(x), vars_prompt
 
 
@@ -505,10 +505,12 @@ class DataEmbedding_ITS_Ind_VarPrompt(nn.Module):
         tt: (B, L, D)
         x: (B, L, D) tensor containing the observed values.
         x_mark: (B, L, D) tensor containing 1 where values were observed and 0 otherwise.
+
+        불규칙 시계열이지만 일단 각 변수마다 최대 길이의 length인 L로 맞춰두고 이 중 관측된 값이 무엇인지에 대해서 확인할 수 있도록 x_mark를 둔 것일 수도 있음.
         """
         B, L, D = x.shape
         time_emb = self.time_embedding(tt.unsqueeze(dim=-1)) # # (B, L, D, d_model)
-        # print(time_emb)
+        
         x = x.unsqueeze(dim=-1) # (B, L, D, 1)
         x_mark = x_mark.unsqueeze(dim=-1) # (B, L, D, 1)
         x_int = torch.cat([x, x_mark], dim=-1) # (B, L, D, 2)
