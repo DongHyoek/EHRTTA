@@ -7,3 +7,6 @@
 
 # Overall Architecture
 ![image](./images/architecture.png)
+
+# Embedding 순서 
+1)  DataEmbedding_ITS_Ind_VarPrompt로 time series 데이터 serialization하게 만들어서 임베딩
