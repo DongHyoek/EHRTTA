@@ -135,7 +135,7 @@ class TextGeneration(nn.Module):
 
         return "\n".join(md_lines).strip()
 
-    def fmt_number(self, x: Any, ndigits: int = 3, type='measurement') -> str:
+    def fmt_number(self, x: Any, ndigits: int = 1, type='measurement') -> str:
         """Format numbers; use 'Not observed' for None/NaN."""
         
         if x is None and type == 'measurement':
@@ -506,7 +506,7 @@ class DataEmbedding_ITS_Ind_VarPrompt(nn.Module):
         x: (B, L, D) tensor containing the observed values.
         x_mark: (B, L, D) tensor containing 1 where values were observed and 0 otherwise.
 
-        불규칙 시계열이지만 일단 각 변수마다 최대 길이의 length인 L로 맞춰두고 이 중 관측된 값이 무엇인지에 대해서 확인할 수 있도록 x_mark를 둔 것일 수도 있음.
+        불규칙 시계열이지만 일단 각 변수마다 최대 길이의 length인 L로 맞춰두고 이 중 관측된 값이 무엇인지에 대해서 확인할 수 있도록 x_mark를 둔 것임. 
         """
         B, L, D = x.shape
         time_emb = self.time_embedding(tt.unsqueeze(dim=-1)) # # (B, L, D, d_model)
