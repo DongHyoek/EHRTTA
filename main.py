@@ -7,19 +7,20 @@ def build_parser():
                     help='name of the experiment')
     
     # model details
-    parser.add_argument('--model', type=str, default='single',
-                        help='algo to train')
-    parser.add_argument('--arch', type=str, default='linear', 
-                        help='arch to use for training', choices = ['linear', 'pc_cnn'])
-    parser.add_argument('--n_hiddens', type=int, default=100,
-                        help='number of hidden neurons at each layer')
-    parser.add_argument('--n_layers', type=int, default=2,
-                        help='number of hidden layers')
-    parser.add_argument('--xav_init', default=False , action='store_true',
+    parser.add_argument('--model_type', type=str, default='meta-llama/Llama-3.1-8B',
+                        help='define the llm model type to use')
+    parser.add_argument('--peft_type', type=str, default='dora',
+                        help='define the peft algorithm')
+    parser.add_argument('--task', type=str, default='classification', 
+                        help='task for training', choices = ['classification', 'regression'])
+    parser.add_argument('--rank_dim', type=int, default=8,
+                        help='number of low-rank dimension at each layer')
+    parser.add_argument('--peft_alpha', type=int, default=16,
+                        help='number of A dimension layers')
+    parser.add_argument('--b_dim', default=False , action='store_true',
                         help='Use xavier initialization')
     parser.add_argument('--use_loss_weight', default=False , action='store_true',
                         help='use second order MAML updates')
-
 
 
     # optimizer parameters influencing all models
