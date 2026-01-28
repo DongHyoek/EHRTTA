@@ -1,254 +1,253 @@
 # Patient Demographics at ICU Admission
 
-- Age : 57.000
-- Gender : F
-- Weight : Not observed
-- Height : Not observed
+- Age : 71.0
+- Gender : Male
+- Weight : 94.0kg
+- Height : 175.0cm 
+
 
 ## Time unit : minutes after admission, Obs : Observation Time, N : observation count, Interval : mean interval between observations, Statistics : [min, max, median, mean, std]
 # Summary of Lab Results
 - [Albumin] (g/dL)
 
-	- Normal Value Range : 0.000 to 6.000
-	- First/Last Obs : 150 / 1420, N : 4, Interval : 423
-	- Statistics: [2.800, 3.100, 2.850, 2.900, 0.141]
+	- Normal Value Range : 0.0 to 6.0
+	- First/Last Obs : 1333 / 1333, N : 1, Interval : Not observed
+	- Statistics: [2.8, 2.8, 2.8, 2.8, 0.0]
 
 - [Alkaline phosphatase] (IU/L)
 
-	- Normal Value Range : 0.000 to inf
-	- First/Last Obs : 150 / 1420, N : 4, Interval : 423
-	- Statistics: [44.000, 55.000, 46.500, 48.000, 4.830]
+	- Normal Value Range : 0.0 to inf
+	- First/Last Obs : 1333 / 1333, N : 1, Interval : Not observed
+	- Statistics: [37.0, 37.0, 37.0, 37.0, 0.0]
 
 - [Alanine aminotransferase] (IU/L)
 
-	- Normal Value Range : 0.000 to inf
-	- First/Last Obs : 150 / 1420, N : 4, Interval : 423
-	- Statistics: [403.000, 416.000, 412.500, 411.000, 5.598]
+	- Normal Value Range : 0.0 to inf
+	- First/Last Obs : 1333 / 1333, N : 1, Interval : Not observed
+	- Statistics: [141.0, 141.0, 141.0, 141.0, 0.0]
 
 - [Aspartate aminotransferase] (IU/L)
 
-	- Normal Value Range : 0.000 to inf
-	- First/Last Obs : 150 / 1420, N : 4, Interval : 423
-	- Statistics: [287.000, 470.000, 369.500, 374.000, 91.553]
+	- Normal Value Range : 0.0 to inf
+	- First/Last Obs : 1333 / 1333, N : 1, Interval : Not observed
+	- Statistics: [332.0, 332.0, 332.0, 332.0, 0.0]
 
 - [Base excess] (mmol/L)
 
-	- Normal Value Range : -25.000 to 25.000
-	- First/Last Obs : 344 / 344, N : 1, Interval : Not observed
-	- Statistics: [-8.000, -8.000, -8.000, -8.000, 0.000]
+	- Normal Value Range : -25.0 to 25.0
+	- First/Last Obs : 235 / 235, N : 1, Interval : Not observed
+	- Statistics: [2.0, 2.0, 2.0, 2.0, 0.0]
 
 - [Bicarbonate] (mmol/L)
 
-	- Normal Value Range : 5.000 to 50.000
-	- First/Last Obs : 150 / 1420, N : 6, Interval : 254
-	- Statistics: [15.000, 21.000, 19.500, 19.000, 2.280]
+	- Normal Value Range : 5.0 to 50.0
+	- First/Last Obs : 235 / 1333, N : 12, Interval : 100
+	- Statistics: [14.0, 25.3, 21.4, 20.7, 3.1]
 
 - [Bilirubin (total)] (mg/dL)
 
-	- Normal Value Range : 0.000 to 100.000
-	- First/Last Obs : 150 / 1420, N : 4, Interval : 423
-	- Statistics: [0.800, 1.700, 1.050, 1.150, 0.387]
+	- Normal Value Range : 0.0 to 100.0
+	- First/Last Obs : 1333 / 1333, N : 1, Interval : Not observed
+	- Statistics: [3.3, 3.3, 3.3, 3.3, 0.0]
 
 - [Bilirubin (direct)] (mg/dL)
 
-	- Normal Value Range : 0.000 to 50.000
-	- First/Last Obs : 319 / 319, N : 1, Interval : Not observed
-	- Statistics: [0.400, 0.400, 0.400, 0.400, 0.000]
+	- Normal Value Range : 0.0 to 50.0
+	- First/Last Obs : 1333 / 1333, N : 1, Interval : Not observed
+	- Statistics: [2.2, 2.2, 2.2, 2.2, 0.0]
 
 - [Band form neutrophils] (%)
 
 	- Normal Value Range : -inf to inf
-	- First/Last Obs : 150 / 1420, N : 3, Interval : 635
-	- Statistics: [5.000, 18.000, 11.000, 11.333, 6.506]
-
+	- (Not observed)
 - [Blood urea nitrogen] (mg/dL)
 
-	- Normal Value Range : 0.000 to 200.000
-	- First/Last Obs : 150 / 1420, N : 6, Interval : 254
-	- Statistics: [32.000, 68.000, 46.000, 47.333, 14.868]
+	- Normal Value Range : 0.0 to 200.0
+	- First/Last Obs : 1048 / 1333, N : 3, Interval : 142
+	- Statistics: [27.0, 32.0, 31.0, 30.0, 2.6]
 
 - [Calcium] (mg/dL)
 
-	- Normal Value Range : 4.000 to 20.000
-	- First/Last Obs : 150 / 1420, N : 6, Interval : 254
-	- Statistics: [8.200, 8.900, 8.450, 8.483, 0.264]
+	- Normal Value Range : 4.0 to 20.0
+	- First/Last Obs : 1048 / 1333, N : 3, Interval : 142
+	- Statistics: [7.5, 8.1, 8.1, 7.9, 0.3]
 
 - [Calcium ionized] (mmol/L)
 
-	- Normal Value Range : 0.500 to 2.000
-	- First/Last Obs : 644 / 644, N : 1, Interval : Not observed
-	- Statistics: [1.260, 1.260, 1.260, 1.260, 0.000]
+	- Normal Value Range : 0.5 to 2.0
+	- First/Last Obs : 433 / 1408, N : 18, Interval : 57
+	- Statistics: [0.7, 1.1, 1.0, 1.0, 0.1]
 
 - [Creatinine kinase] (IU/L)
 
-	- Normal Value Range : 0.000 to inf
-	- First/Last Obs : 150 / 150, N : 1, Interval : Not observed
-	- Statistics: [251.000, 251.000, 251.000, 251.000, 0.000]
+	- Normal Value Range : 0.0 to inf
+	- First/Last Obs : 335 / 335, N : 1, Interval : Not observed
+	- Statistics: [45.0, 45.0, 45.0, 45.0, 0.0]
 
 - [Creatinine kinase MB] (ng/mL)
 
-	- Normal Value Range : 0.000 to inf
-	- First/Last Obs : 150 / 451, N : 3, Interval : 150
-	- Statistics: [8.000, 9.000, 8.000, 8.333, 0.577]
+	- Normal Value Range : 0.0 to inf
+	- First/Last Obs : 335 / 335, N : 1, Interval : Not observed
+	- Statistics: [1.7, 1.7, 1.7, 1.7, 0.0]
 
 - [Chloride] (mmol/L)
 
-	- Normal Value Range : 80.000 to 130.000
-	- First/Last Obs : 150 / 1420, N : 6, Interval : 254
-	- Statistics: [124.000, 128.000, 127.000, 126.667, 1.506]
+	- Normal Value Range : 80.0 to 130.0
+	- First/Last Obs : 434 / 1408, N : 11, Interval : 97
+	- Statistics: [103.5, 110.0, 106.0, 106.6, 1.9]
 
 - [Creatinine] (mg/dL)
 
-	- Normal Value Range : 0.000 to 15.000
-	- First/Last Obs : 150 / 1420, N : 6, Interval : 254
-	- Statistics: [0.700, 1.400, 1.000, 1.000, 0.283]
+	- Normal Value Range : 0.0 to 15.0
+	- First/Last Obs : 1048 / 1333, N : 3, Interval : 142
+	- Statistics: [1.8, 2.4, 2.1, 2.1, 0.3]
 
 - [C-reactive protein] (mg/L)
 
-	- Normal Value Range : 0.000 to inf
-	- First/Last Obs : 451 / 451, N : 1, Interval : Not observed
-	- Statistics: [160.200, 160.200, 160.200, 160.200, 0.000]
-
+	- Normal Value Range : 0.0 to inf
+	- (Not observed)
 - [Fibrinogen] (mg/dL)
 
-	- Normal Value Range : 0.000 to 1500.000
-	- First/Last Obs : 319 / 1420, N : 4, Interval : 367
-	- Statistics: [251.000, 466.000, 341.500, 350.000, 106.323]
+	- Normal Value Range : 0.0 to 1500.0
+	- First/Last Obs : 649 / 1048, N : 3, Interval : 200
+	- Statistics: [393.0, 463.0, 425.0, 427.0, 35.0]
 
 - [Fraction of inspired oxygen] (%)
 
-	- Normal Value Range : 21.000 to 100.000
-	- First/Last Obs : 160 / 1420, N : 14, Interval : 210
-	- Statistics: [35.000, 50.000, 40.000, 41.429, 6.022]
+	- Normal Value Range : 21.0 to 100.0
+	- First/Last Obs : 43 / 1423, N : 28, Interval : 115
+	- Statistics: [60.0, 100.0, 90.0, 84.3, 17.5]
 
 - [Glucose] (mg/dL)
 
-	- Normal Value Range : 0.000 to 1000.000
-	- First/Last Obs : 150 / 1420, N : 6, Interval : 254
-	- Statistics: [151.000, 538.000, 408.500, 378.333, 155.934]
+	- Normal Value Range : 0.0 to 1000.0
+	- First/Last Obs : 433 / 1408, N : 24, Interval : 42
+	- Statistics: [151.0, 283.0, 211.8, 214.6, 33.1]
 
 - [Haemoglobin] (g/dL)
 
-	- Normal Value Range : 4.000 to 18.000
-	- First/Last Obs : 150 / 1420, N : 6, Interval : 254
-	- Statistics: [11.500, 12.800, 12.200, 12.217, 0.581]
+	- Normal Value Range : 4.0 to 18.0
+	- First/Last Obs : 433 / 1408, N : 19, Interval : 54
+	- Statistics: [6.3, 9.9, 7.5, 8.0, 1.0]
 
 - [International normalised ratio (INR)] ()
 
 	- Normal Value Range : -inf to inf
-	- First/Last Obs : 150 / 1420, N : 6, Interval : 254
-	- Statistics: [1.400, 1.600, 1.500, 1.517, 0.075]
+	- First/Last Obs : 915 / 1333, N : 3, Interval : 209
+	- Statistics: [2.2, 2.3, 2.3, 2.3, 0.1]
 
 - [Potassium] (mmol/L)
 
-	- Normal Value Range : 0.000 to 10.000
-	- First/Last Obs : 150 / 1420, N : 6, Interval : 254
-	- Statistics: [2.700, 3.800, 3.200, 3.250, 0.437]
+	- Normal Value Range : 0.0 to 10.0
+	- First/Last Obs : 433 / 1408, N : 19, Interval : 54
+	- Statistics: [2.9, 5.1, 3.7, 3.6, 0.5]
 
 - [Lactate] (mmol/L)
 
-	- Normal Value Range : 0.000 to 50.000
-	- First/Last Obs : 344 / 1422, N : 3, Interval : 539
-	- Statistics: [2.500, 5.900, 3.300, 3.900, 1.778]
+	- Normal Value Range : 0.0 to 50.0
+	- First/Last Obs : 235 / 235, N : 1, Interval : Not observed
+	- Statistics: [1.6, 1.6, 1.6, 1.6, 0.0]
 
 - [Lymphocytes] (%)
 
-	- Normal Value Range : 0.000 to 100.000
-	- First/Last Obs : 150 / 1420, N : 3, Interval : 635
-	- Statistics: [10.000, 16.000, 12.000, 12.667, 3.055]
+	- Normal Value Range : 0.0 to 100.0
+	- First/Last Obs : 1333 / 1333, N : 1, Interval : Not observed
+	- Statistics: [6.0, 6.0, 6.0, 6.0, 0.0]
 
 - [Mean cell haemoglobin] (pg)
 
-	- Normal Value Range : 0.000 to inf
-	- First/Last Obs : 150 / 1420, N : 6, Interval : 254
-	- Statistics: [30.700, 31.300, 30.950, 30.983, 0.248]
+	- Normal Value Range : 0.0 to inf
+	- First/Last Obs : 1048 / 1333, N : 3, Interval : 142
+	- Statistics: [26.7, 28.0, 27.8, 27.5, 0.7]
 
 - [Mean corpuscular haemoglobin concentration] (%)
 
-	- Normal Value Range : 20.000 to 50.000
-	- First/Last Obs : 150 / 1420, N : 6, Interval : 254
-	- Statistics: [31.600, 34.000, 32.750, 32.867, 0.983]
+	- Normal Value Range : 20.0 to 50.0
+	- First/Last Obs : 1048 / 1333, N : 3, Interval : 142
+	- Statistics: [32.1, 33.5, 32.7, 32.8, 0.7]
 
 - [Mean corpuscular volume] (fL)
 
-	- Normal Value Range : 50.000 to 150.000
-	- First/Last Obs : 150 / 1420, N : 6, Interval : 254
-	- Statistics: [92.000, 97.000, 94.000, 94.167, 2.137]
+	- Normal Value Range : 50.0 to 150.0
+	- First/Last Obs : 1048 / 1333, N : 3, Interval : 142
+	- Statistics: [83.0, 85.5, 83.1, 83.9, 1.4]
 
 - [Methaemoglobin] (%)
 
-	- Normal Value Range : 0.000 to 100.000
-	- (Not observed)
+	- Normal Value Range : 0.0 to 100.0
+	- First/Last Obs : 434 / 1408, N : 11, Interval : 97
+	- Statistics: [0.3, 1.2, 0.7, 0.7, 0.3]
+
 - [Magnesium] (mg/dL)
 
-	- Normal Value Range : 0.500 to 5.000
-	- First/Last Obs : 150 / 1420, N : 6, Interval : 254
-	- Statistics: [2.100, 2.400, 2.300, 2.283, 0.133]
+	- Normal Value Range : 0.5 to 5.0
+	- First/Last Obs : 1333 / 1333, N : 1, Interval : Not observed
+	- Statistics: [3.1, 3.1, 3.1, 3.1, 0.0]
 
 - [Sodium] (mmol/L)
 
-	- Normal Value Range : 110.000 to 165.000
-	- First/Last Obs : 150 / 1420, N : 6, Interval : 254
-	- Statistics: [153.000, 161.000, 158.500, 157.667, 3.077]
+	- Normal Value Range : 110.0 to 165.0
+	- First/Last Obs : 433 / 1408, N : 19, Interval : 54
+	- Statistics: [137.0, 153.5, 147.0, 146.1, 5.4]
 
 - [Neutrophils] (%)
 
-	- Normal Value Range : 0.000 to 100.000
-	- First/Last Obs : 150 / 1420, N : 3, Interval : 635
-	- Statistics: [54.000, 72.000, 58.000, 61.333, 9.452]
+	- Normal Value Range : 0.0 to 100.0
+	- First/Last Obs : 1333 / 1333, N : 1, Interval : Not observed
+	- Statistics: [87.0, 87.0, 87.0, 87.0, 0.0]
 
 - [CO2 partial pressure] (mmHg)
 
-	- Normal Value Range : 10.000 to 150.000
-	- First/Last Obs : 344 / 344, N : 1, Interval : Not observed
-	- Statistics: [42.000, 42.000, 42.000, 42.000, 0.000]
+	- Normal Value Range : 10.0 to 150.0
+	- First/Last Obs : 235 / 1408, N : 20, Interval : 62
+	- Statistics: [20.4, 54.9, 39.7, 40.5, 8.8]
 
 - [pH of blood] ()
 
-	- Normal Value Range : 6.800 to 8.000
-	- First/Last Obs : 344 / 644, N : 2, Interval : 300
-	- Statistics: [7.250, 7.300, 7.275, 7.275, 0.035]
+	- Normal Value Range : 6.8 to 8.0
+	- First/Last Obs : 235 / 1408, N : 20, Interval : 62
+	- Statistics: [7.1, 7.6, 7.3, 7.3, 0.1]
 
 - [Phosphate] (mg/dL)
 
-	- Normal Value Range : 0.000 to 40.000
-	- First/Last Obs : 150 / 1420, N : 6, Interval : 254
-	- Statistics: [0.700, 3.700, 1.650, 2.000, 1.106]
+	- Normal Value Range : 0.0 to 40.0
+	- First/Last Obs : 1333 / 1333, N : 1, Interval : Not observed
+	- Statistics: [4.6, 4.6, 4.6, 4.6, 0.0]
 
 - [Platelets] (1,000 / μL)
 
-	- Normal Value Range : 5.000 to 1200.000
-	- First/Last Obs : 150 / 1420, N : 6, Interval : 254
-	- Statistics: [91.000, 112.000, 99.000, 100.833, 9.411]
+	- Normal Value Range : 5.0 to 1200.0
+	- First/Last Obs : 649 / 1333, N : 5, Interval : 171
+	- Statistics: [156.0, 259.0, 191.0, 201.6, 38.3]
 
 - [O2 partial pressure] (mmHg)
 
-	- Normal Value Range : 40.000 to 600.000
-	- First/Last Obs : 344 / 344, N : 1, Interval : Not observed
-	- Statistics: [49.000, 49.000, 49.000, 49.000, 0.000]
+	- Normal Value Range : 40.0 to 600.0
+	- First/Last Obs : 235 / 1408, N : 20, Interval : 62
+	- Statistics: [64.3, 350.0, 143.5, 160.1, 81.9]
 
 - [Partial thromboplastin time] (sec)
 
-	- Normal Value Range : 0.000 to inf
-	- First/Last Obs : 150 / 1420, N : 6, Interval : 254
-	- Statistics: [26.000, 27.100, 26.450, 26.517, 0.366]
+	- Normal Value Range : 0.0 to inf
+	- First/Last Obs : 915 / 1048, N : 2, Interval : 133
+	- Statistics: [98.0, 101.0, 99.5, 99.5, 2.1]
 
 - [Troponin T] (ng/mL)
 
-	- Normal Value Range : 0.000 to inf
-	- First/Last Obs : 150 / 451, N : 3, Interval : 150
-	- Statistics: [0.280, 0.320, 0.310, 0.303, 0.021]
+	- Normal Value Range : 0.0 to inf
+	- First/Last Obs : 335 / 335, N : 1, Interval : Not observed
+	- Statistics: [0.1, 0.1, 0.1, 0.1, 0.0]
 
 - [White blood cells] (1,000 / μL)
 
-	- Normal Value Range : 0.000 to inf
-	- First/Last Obs : 150 / 1420, N : 6, Interval : 254
-	- Statistics: [5.300, 11.900, 8.500, 8.717, 2.669]
+	- Normal Value Range : 0.0 to inf
+	- First/Last Obs : 1048 / 1333, N : 3, Interval : 142
+	- Statistics: [17.5, 19.9, 17.7, 18.4, 1.3]
 
 
 # Summary of Output Events
 - [Urine output] (mL)
 
-	- Normal Value Range : 0.000 to 2000.000
-	- First/Last Obs : 51 / 1420, N : 24, Interval : 60
-	- Statistics: [30.000, 328.000, 100.000, 120.958, 83.488]
+	- Normal Value Range : 0.0 to 2000.0
+	- First/Last Obs : 43 / 1423, N : 14, Interval : 106
+	- Statistics: [5.0, 600.0, 22.5, 72.9, 154.1]

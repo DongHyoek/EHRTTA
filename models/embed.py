@@ -241,6 +241,7 @@ class TextGeneration(nn.Module):
             "value_stats": value_stats
             }
 
+## Below codes are sourced by https://github.com/usail-hkust/ISTS-PLM
 
 class PositionalEmbedding(nn.Module):
     def __init__(self, d_model, max_len=5000):
@@ -404,7 +405,6 @@ class DataEmbedding(nn.Module):
             x = self.value_embedding(x) + self.temporal_embedding(x_mark) + self.position_embedding(x)
         return self.dropout(x)
 
-
 class DataEmbedding_ITS_Ind(nn.Module):
     def __init__(self, c_in, d_model, device=None, dropout=0.1, use_te=True):
         super(DataEmbedding_ITS_Ind, self).__init__()
@@ -441,7 +441,6 @@ class DataEmbedding_ITS_Ind(nn.Module):
  
         return self.dropout(x)
     
-
 
 class DataEmbedding_ITS_Ind_VarPrompt_indicator(nn.Module):
     def __init__(self, c_in, d_model, n_var, device=None, dropout=0.1):
