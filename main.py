@@ -6,7 +6,7 @@ def build_parser():
     parser.add_argument('--expt_name', type=str, default='test_lamaml',
                     help='name of the experiment')
     
-    # model details
+    # LLM model details
     parser.add_argument('--model_id', type=str, default='meta-llama/Llama-3.1-8B',
                         help='define the llm model type to use')
     parser.add_argument('--peft_type', type=str, default='dora',
@@ -25,11 +25,16 @@ def build_parser():
                         help='the pooling method of output hidden vectors in LLM')
     parser.add_argument('--e_pool', type=str, default='mean',
                         help='the pooling method of vectors in time series embedding modules')
-    parser.add_argument('--use_loss_weight', default=False , action='store_true',
-                        help='use second order MAML updates')
 
+    # TTA methods details
+    parser.add_argument('--statsmode', type=str, default='aggregate',
+                        help='define the method for collect mean/std values', choices = ["aggregate", "distribution"])
+    parser.add_argument('--selectmode', type=str, default='mean_of_dist',
+                        help='define the method for ')
 
     # optimizer parameters influencing all models
+    parser.add_argument('--use_loss_weight', default=False , action='store_true',
+                        help='use second order MAML updates')
     parser.add_argument("--glances", default=1, type=int,
                         help="Number of times the model is allowed to train over a set of samples in the single pass setting") 
     parser.add_argument('--n_epochs', type=int, default=1,
