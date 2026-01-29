@@ -95,7 +95,7 @@ class StatsBank:
     def load(path: str, map_location: str = "cpu") -> Dict[str, Any]:
         return torch.load(path, map_location=map_location)
     
-class LoraAStatCollector(nn.Module):
+class StatsCollector(nn.Module):
     """
     lora_A 출력 z=A(x)을 StatsBank에 기록하고 z는 그대로 반환.
     """
@@ -116,7 +116,7 @@ class LoraAStatCollector(nn.Module):
         return z
 
 
-class LoraAAdaIN(nn.Module):
+class PEFTAdaIN(nn.Module):
     """
     z = A(x) (B,L,r)를 AdaIN처럼 변환:
       z_hat = (z - mu_c) / sigma_c * sigma_t + mu_t
@@ -236,7 +236,7 @@ def wrap_lora_A_inplace(
 
         if isinstance(lora_A, nn.ModuleDict) and adapter_name in lora_A:
             a_mod = lora_A[adapter_name]
-            if isinstance(a_mod, (LoraAStatCollector, LoraAAdaIN)):
+            if isinstance(a_mod, (StatsCollector, PEFTAdaIN)):
                 continue
             key = f"{module_path}.lora_A[{adapter_name}]"
             lora_A[adapter_name] = wrapper_factory(a_mod, key)
@@ -244,7 +244,7 @@ def wrap_lora_A_inplace(
 
         elif isinstance(lora_A, dict) and adapter_name in lora_A:
             a_mod = lora_A[adapter_name]
-            if isinstance(a_mod, (LoraAStatCollector, LoraAAdaIN)):
+            if isinstance(a_mod, (StatsCollector, PEFTAdaIN)):
                 continue
             key = f"{module_path}.lora_A[{adapter_name}]"
             lora_A[adapter_name] = wrapper_factory(a_mod, key)
@@ -254,7 +254,7 @@ def wrap_lora_A_inplace(
 
 
 @torch.no_grad()
-def collect_loraA_stats_on_datasetA(
+def collect_loraA_stats(
     model: nn.Module,
     dataloaderA,
     r: int = 8,
@@ -269,7 +269,7 @@ def collect_loraA_stats_on_datasetA(
     bank = StatsBank(mode=mode, r=r, device=device)
 
     def factory(a_mod, key):
-        return LoraAStatCollector(a_mod, bank, key)
+        return StatsCollector(a_mod, bank, key)
 
     replaced = wrap_lora_A_inplace(model, factory, adapter_name=adapter_name)
     print(f"[INFO] Wrapped lora_A for stats collection: {replaced}")
@@ -292,7 +292,7 @@ def apply_adain_transform_to_loraA_for_inference(
     style_mode: StatsMode = stats_payload["mode"]
 
     def factory(a_mod, key):
-        return LoraAAdaIN(
+        return PEFTAdaIN(
             a_linear=a_mod,
             stats_payload=stats_payload,
             key=key,
