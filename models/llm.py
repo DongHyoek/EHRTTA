@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from transformers import AutoConfig, AutoTokenizer, LlamaModel
+from transformers import AutoConfig, AutoTokenizer, AutoModel
 from peft import LoraConfig, get_peft_model, TaskType
 
 
@@ -84,19 +84,19 @@ class DownstreamConfig:
     dora_alpha: int = 16
     dora_dropout: float = 0.0
     target_modules: tuple = ("q_proj", "k_proj", "v_proj", "o_proj")  # attention에만
-    torch_dtype: torch.dtype = torch.bfloat16
 
-class LlamaForDownstream(nn.Module):
-    def __init__(self, cfg: DownstreamConfig):
+class PEFTTSLLM(nn.Module):
+    def __init__(self, args):
         super().__init__()
-        self.cfg = cfg
+        
+        self.args = args
 
-        hf_config = AutoConfig.from_pretrained(cfg.model_id)
+        hf_config = AutoConfig.from_pretrained(args.model_id)
 
-        # ✅ 생성용(CausalLM) 말고, hidden state 뽑기 좋은 LlamaModel 사용
-        backbone = LlamaModel.from_pretrained(
-            cfg.model_id,
-            torch_dtype=cfg.torch_dtype,
+        # hidden state 뽑기 좋은 AutoModel 사용
+        backbone = AutoModel.from_pretrained(
+            args.model_id,
+            torch_dtype=torch.bfloat16,
             device_map="auto",
         )
 
@@ -105,16 +105,16 @@ class LlamaForDownstream(nn.Module):
             p.requires_grad = False
 
         # 2) DoRA 붙이기 (PEFT에서 use_dora=True) :contentReference[oaicite:3]{index=3}
-        peft_cfg = LoraConfig(
+        peft_args = LoraConfig(
             task_type=TaskType.FEATURE_EXTRACTION,
-            r=cfg.dora_r,
-            lora_alpha=cfg.dora_alpha,
-            lora_dropout=cfg.dora_dropout,
-            target_modules=list(cfg.target_modules),
+            r=args.dora_r,
+            lora_alpha=args.dora_alpha,
+            lora_dropout=args.dora_dropout,
+            target_modules=list(args.target_modules),
             bias="none",
             use_dora=True,
         )
-        self.backbone = get_peft_model(backbone, peft_cfg)
+        self.backbone = get_peft_model(backbone, peft_args)
 
         # 3) A 출력(low-rank vector) 변형 삽입
         n = wrap_all_lora_A_modules_inplace(self.backbone, FeatureTransform())
@@ -123,22 +123,23 @@ class LlamaForDownstream(nn.Module):
         hidden_size = hf_config.hidden_size
 
         # 4) 다운스트림 head
-        if cfg.task == "classification":
-            self.head = nn.Linear(hidden_size, cfg.num_labels)
-        elif cfg.task == "regression":
-            self.head = nn.Linear(hidden_size, cfg.num_labels)  # 보통 num_labels=1
+        if args.task == "classification":
+            self.head = nn.Linear(hidden_size, args.num_labels)
+        elif args.task == "regression":
+            self.head = nn.Linear(hidden_size, args.num_labels)  # 보통 num_labels=1
         else:
             raise ValueError("task must be 'classification' or 'regression'")
 
     def _pool(self, last_hidden_state: torch.Tensor, attention_mask: Optional[torch.Tensor]) -> torch.Tensor:
         # last_hidden_state: (B, L, H)
-        if self.cfg.pooling == "last":
+        if self.args.pooling == "last":
             if attention_mask is None:
                 return last_hidden_state[:, -1, :]
             # 마지막 유효 토큰 위치로 gather
             lengths = attention_mask.long().sum(dim=1) - 1  # (B,)
             return last_hidden_state[torch.arange(last_hidden_state.size(0), device=last_hidden_state.device), lengths]
-        elif self.cfg.pooling == "mean":
+        
+        elif self.args.pooling == "mean":
             if attention_mask is None:
                 return last_hidden_state.mean(dim=1)
             mask = attention_mask.unsqueeze(-1).to(last_hidden_state.dtype)
@@ -155,7 +156,7 @@ class LlamaForDownstream(nn.Module):
     ) -> Dict[str, Any]:
         """
         ✅ input_ids(이미 토크나이즈된 정수) OR inputs_embeds(이미 임베딩된 벡터) 둘 중 하나를 주입.
-        transformers LlamaModel은 inputs_embeds를 지원함. :contentReference[oaicite:4]{index=4}
+        transformers AutoModel은 inputs_embeds를 지원함. :contentReference[oaicite:4]{index=4}
         """
         outputs = self.backbone(
             input_ids=input_ids,
@@ -170,7 +171,7 @@ class LlamaForDownstream(nn.Module):
 
         loss = None
         if labels is not None:
-            if self.cfg.task == "classification":
+            if self.args.task == "classification":
                 loss = F.cross_entropy(logits, labels.long())
             else:
                 # regression: labels shape (B,) or (B,1)

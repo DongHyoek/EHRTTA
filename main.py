@@ -7,18 +7,24 @@ def build_parser():
                     help='name of the experiment')
     
     # model details
-    parser.add_argument('--model_type', type=str, default='meta-llama/Llama-3.1-8B',
+    parser.add_argument('--model_id', type=str, default='meta-llama/Llama-3.1-8B',
                         help='define the llm model type to use')
     parser.add_argument('--peft_type', type=str, default='dora',
                         help='define the peft algorithm')
     parser.add_argument('--task', type=str, default='classification', 
                         help='task for training', choices = ['classification', 'regression'])
     parser.add_argument('--rank_dim', type=int, default=8,
-                        help='number of low-rank dimension at each layer')
+                        help='the dimension of the low-rank matrices')
     parser.add_argument('--peft_alpha', type=int, default=16,
-                        help='number of A dimension layers')
-    parser.add_argument('--b_dim', default=False , action='store_true',
-                        help='Use xavier initialization')
+                        help='the scaling factor for the low-rank matrices')
+    parser.add_argument('--peft_dropout', type=int, default=0.1,
+                        help='the dropout probability of the LoRA layers')
+    parser.add_argument('--target_modules', type=list, default=['q_proj', 'v_proj'],
+                        help='which parameters applied by peft method. please check the parameter name of the backbone model')
+    parser.add_argument('--h_pool', type=str, default='mean',
+                        help='the pooling method of output hidden vectors in LLM')
+    parser.add_argument('--e_pool', type=str, default='mean',
+                        help='the pooling method of vectors in time series embedding modules')
     parser.add_argument('--use_loss_weight', default=False , action='store_true',
                         help='use second order MAML updates')
 
