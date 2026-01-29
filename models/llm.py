@@ -1,27 +1,79 @@
-# Here is the LLM modeling codes with PEFT LoRA
+import os
+from dataclasses import dataclass
+from typing import Optional, Dict, Any
+
 import torch
 import torch.nn as nn
-import transformers
+import torch.nn.functional as F
 
-from transformers import AutoConfig, AutoTokenizer, AutoTokenizer, AutoModelForCausalLM, LlamaModel
-from peft import LoraConfig
-
-
-class TemporalLLM(nn.Module):
-
-    def __init__(self, args):
-        super(TemporalLLM, self).__init__()
-
-        # self.tokenizer = AutoTokenizer.from_pretrained(args.model_type)
-        self.model = AutoModelForCausalLM.from_pretrained(args.model_type)
+from transformers import AutoConfig, AutoTokenizer, LlamaModel
+from peft import LoraConfig, get_peft_model, TaskType
 
 
-    def forward(self, tokenized_vec):
+# -------------------------
+# 1) A(x) 출력에 적용할 커스텀 함수 예시
+# -------------------------
+class FeatureTransform(nn.Module):
+    """
+    DoRA/LoRA의 lora_A 출력 (low-rank vector)에 적용할 변환.
+    예: L2 normalization
+    """
+    def __init__(self, eps: float = 1e-6):
+        super().__init__()
+        self.eps = eps
 
-        output = self.model(tokenized_vec)
+    def forward(self, z: torch.Tensor) -> torch.Tensor:
+        # z: (B, L, r)
+        norm = z.norm(p=2, dim=-1, keepdim=True).clamp_min(self.eps)
+        return z / norm
 
-        return output
-    
+
+class AWithTransform(nn.Module):
+    """
+    기존 lora_A(Linear)를 감싸서 A(x) -> transform(A(x)) 반환
+    """
+    def __init__(self, a_linear: nn.Module, transform: nn.Module):
+        super().__init__()
+        self.a_linear = a_linear
+        self.transform = transform
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        z = self.a_linear(x)
+        z = self.transform(z)
+        return z
+
+
+def wrap_all_lora_A_modules_inplace(peft_model: nn.Module, transform: nn.Module) -> int:
+    """
+    PEFT가 삽입한 LoRA/DoRA 레이어들 중 lora_A 모듈을 찾아 wrapper로 교체.
+    (PEFT 내부 구현이 버전별로 조금 달라서 '탐색 기반'으로 최대한 견고하게 작성)
+
+    Returns:
+        교체한 lora_A 개수
+    """
+    replaced = 0
+
+    for module in peft_model.modules():
+        # PEFT LoRA layer들은 보통 lora_A, lora_B 같은 attribute를 가짐(버전/타겟 레이어 타입별로 약간 다름)
+        if hasattr(module, "lora_A"):
+            lora_A = getattr(module, "lora_A")
+
+            # lora_A가 adapter_name -> nn.Module 형태로 담긴 dict/ModuleDict인 경우가 흔함
+            if isinstance(lora_A, (nn.ModuleDict, dict)):
+                for adapter_name, a_mod in list(lora_A.items()):
+                    # 이미 wrapper면 skip
+                    if isinstance(a_mod, AWithTransform):
+                        continue
+                    lora_A[adapter_name] = AWithTransform(a_mod, transform)
+                    replaced += 1
+
+            # 일부 구현에서는 단일 모듈일 수도 있으니 방어적으로 처리
+            elif isinstance(lora_A, nn.Module) and not isinstance(lora_A, AWithTransform):
+                setattr(module, "lora_A", AWithTransform(lora_A, transform))
+                replaced += 1
+
+    return replaced
+
 @dataclass
 class DownstreamConfig:
     model_id: str = "meta-llama/Meta-Llama-3.1-8B"  # base로 쓰는 걸 추천(인스트럭트도 가능)
@@ -33,7 +85,6 @@ class DownstreamConfig:
     dora_dropout: float = 0.0
     target_modules: tuple = ("q_proj", "k_proj", "v_proj", "o_proj")  # attention에만
     torch_dtype: torch.dtype = torch.bfloat16
-
 
 class LlamaForDownstream(nn.Module):
     def __init__(self, cfg: DownstreamConfig):
@@ -126,29 +177,3 @@ class LlamaForDownstream(nn.Module):
                 loss = F.mse_loss(logits.squeeze(-1), labels.float().view(-1))
 
         return {"loss": loss, "logits": logits, "pooled": pooled}
-
-if __name__ == "__main__":
-    import torch
-    from transformers import pipeline
-
-    model_id = "meta-llama/Meta-Llama-3.1-8B-Instruct"
-
-    pipe = pipeline(
-        "text-generation",
-        model=model_id,
-        torch_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float32,
-        device_map="auto",
-    )
-
-    prompt = "Explain what a digital twin is in 3 bullet points."
-
-    out = pipe(
-        prompt,
-        max_new_tokens=200,
-        do_sample=True,
-        temperature=0.7,
-        top_p=0.9,
-        pad_token_id = pipe.tokenizer.eos_token_id
-    )
-
-    print(out[0]["generated_text"])
