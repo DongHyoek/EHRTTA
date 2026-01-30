@@ -72,11 +72,12 @@ class PEFTTSLLM(nn.Module):
             raise ValueError("pooling must be 'last' or 'mean'")
 
     def forward(self, input_ids: Optional[torch.Tensor] = None, inputs_embeds: Optional[torch.Tensor] = None, 
-                attention_mask: Optional[torch.Tensor] = None, labels: Optional[torch.Tensor] = None ) -> Dict[str, Any]:
+                attention_mask: Optional[torch.Tensor] = None, labels: Optional[torch.Tensor] = None) -> Dict[str, Any]:
         """
         ✅ input_ids(이미 토크나이즈된 정수) OR inputs_embeds(이미 임베딩된 벡터) 둘 중 하나를 주입.
         transformers AutoModel은 inputs_embeds를 지원함. :contentReference[oaicite:4]{index=4}
         """
+
         outputs = self.backbone(
             input_ids=input_ids,
             inputs_embeds=inputs_embeds,
@@ -89,7 +90,6 @@ class PEFTTSLLM(nn.Module):
         pooled = self._pool(h, attention_mask)  # (B, H)
         logits = self.head(pooled)              # (B, C) or (B, 1)
 
-        loss = None
         if labels is not None:
             if self.args.task == "classification":
                 loss = F.cross_entropy(logits, labels.long())

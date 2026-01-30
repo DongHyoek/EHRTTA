@@ -30,8 +30,10 @@ def build_parser():
     parser.add_argument('--statsmode', type=str, default='aggregate',
                         help='define the method for collect mean/std values', choices = ["aggregate", "distribution"])
     parser.add_argument('--selectmode', type=str, default='mean_of_dist',
-                        help='define the method for ')
-
+                        help='define the method for using distribution of statistics')
+    parser.add_argument('--use_tta', default=True, action='store_true',
+                        help='select using tta or not')
+    
     # optimizer parameters influencing all models
     parser.add_argument('--use_loss_weight', default=False , action='store_true',
                         help='use second order MAML updates')
