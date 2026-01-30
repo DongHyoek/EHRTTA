@@ -33,6 +33,7 @@ class RunningStats:
 
 class StatsBank:
     """
+    두 종류 존재 : 각 토큰별 r차원별 단일 스칼라값 , 각 토큰별 차원별 distribution의 분포 
     key : 각각의 PEFT layer  
     - aggregate: key -> {"mean": (L,r), "var": (L,r)}
     - distribution: key -> {"means": [ (L,r), ... ], "vars": [ (L,r), ... ]}
@@ -59,16 +60,17 @@ class StatsBank:
         """
         self._ensure_key(key)
 
+        # scalar values 사용
         if self.mode == "aggregate":
             self._agg[key].update(z)
             return
 
-        # distribution: 배치별 mean/var 저장
-        z2 = z.detach()  # (B, L, r)
-        mean = z2.mean(dim=0)
-        var = z2.var(dim=0, unbiased=False).clamp_min(1e-12)
-        self._dist[key]["means"].append(mean) # (L, r)
-        self._dist[key]["vars"].append(var)   # (L,r)
+        else: # distribution: 배치별 mean/var 저장
+            z2 = z.detach()  # (B, L, r)
+            mean = z2.mean(dim=0)
+            var = z2.var(dim=0, unbiased=False).clamp_min(1e-12)
+            self._dist[key]["means"].append(mean) # (L, r)
+            self._dist[key]["vars"].append(var)   # (L,r)
 
     @torch.no_grad()
     def finalize(self) -> Dict[str, Any]:
@@ -89,22 +91,22 @@ class StatsBank:
     def save(self, path: str):
         torch.save(self.to_payload(), path)
 
-    @staticmethod # 클래스 안에 소속이 되어 있으나, 클래스 내부의 변수를 쓰거나 수정할 일이 없는 독립적인 함수를 나타낼 때
+    @staticmethod # 클래스 안에 소속이 되어 있으나, 클래스 내부의 변수를 쓰거나 수정할 일이 없는 독립적인 함수를 나타낼 때 사용
     def load(path: str, map_location: str = "cpu") -> Dict[str, Any]:
         return torch.load(path, map_location=map_location)
     
 class StatsCollector(nn.Module):
     """
-    lora_A 출력 z=A(x)을 StatsBank에 기록하고 z는 그대로 반환.
+    역할 : lora_A 출력 z=A(x)을 StatsBank에 기록하고 z는 그대로 반환.
     """
-    def __init__(self, a_linear: nn.Module, bank, key: str):
+    def __init__(self, peft_layer: nn.Module, bank, key: str):
         super().__init__()
-        self.a_linear = a_linear
+        self.peft_layer = peft_layer
         self.bank = bank
         self.key = key
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        z = self.a_linear(x)
+        z = self.peft_layer(x)
 
         # 혹시라도 (B,r)로 나올 수 있으므로 (B,1,r)로 맞춰 bank에 기록
         if z.dim() == 2:
@@ -114,8 +116,8 @@ class StatsCollector(nn.Module):
             z_ = z                  # (B,L,r)
 
         self.bank.update_from_batch(self.key, z_)
-        return z
 
+        return z
 
 class PEFTAdaIN(nn.Module):
     """
@@ -134,28 +136,19 @@ class PEFTAdaIN(nn.Module):
           - random: 랜덤 선택
           - cycle: 순환 선택
     """
-    def __init__(
-        self,
-        a_linear: nn.Module,
-        stats_payload: Dict[str, Any],
-        key: str,
-        style_mode: str,
-        selection: str,
-        seed: int = 0,
-        eps: float = 1e-6,
-        instance_wise: bool = True,
-    ):
+    def __init__(self, peft_layer: nn.Module, stats_payload: Dict[str, Any], key: str, 
+                 agg_mode: str, selection: str, seed: int = 0, eps: float = 1e-6):
+        
         super().__init__()
-        self.a_linear = a_linear
+        self.peft_layer = peft_layer
         self.key = key
         self.eps = eps
-        self.instance_wise = instance_wise
 
-        # payload: {"mode": "...", "r": 8, "data": {...}}
-        if stats_payload.get("mode") != style_mode:
-            raise ValueError(f"payload mode({stats_payload.get('mode')}) != style_mode({style_mode})")
+        # payload: {"mode": "...", "r": ..., "data": {...}}
+        if stats_payload.get("mode") != agg_mode:
+            raise ValueError(f"payload mode({stats_payload.get('mode')}) != agg_mode({agg_mode})")
 
-        self.style_mode = style_mode
+        self.agg_mode = agg_mode
         self.selection = selection
         self.data = stats_payload["data"]
 
@@ -166,33 +159,36 @@ class PEFTAdaIN(nn.Module):
     def _get_target_stats(self, device: torch.device) -> Tuple[torch.Tensor, torch.Tensor]:
         entry = self.data[self.key]
 
-        if self.style_mode == "aggregate":
+        # use stats scalar values 
+        if self.agg_mode == "aggregate":
             mu_t = entry["mean"].to(device)
             var_t = entry["var"].to(device).clamp_min(1e-12)
             return mu_t, var_t
+        
+        else: # use stats distribution
+            means = entry["means"]
+            vars_ = entry["vars"]
 
-        # distribution
-        means: List[torch.Tensor] = entry["means"]
-        vars_: List[torch.Tensor] = entry["vars"]
-        if len(means) == 0:
-            raise RuntimeError(f"[{self.key}] distribution stats empty")
+            if len(means) == 0:
+                raise RuntimeError(f"[{self.key}] distribution stats empty")
 
-        if self.selection == "mean_of_dist":
-            mu_t = torch.stack([m.to(device) for m in means], dim=0).mean(dim=0)
-            var_t = torch.stack([v.to(device) for v in vars_], dim=0).mean(dim=0).clamp_min(1e-12)
-            return mu_t, var_t
+            if self.selection == "mean_of_dist":
+                mu_t = torch.stack([m.to(device) for m in means], dim=0).mean(dim=0)
+                var_t = torch.stack([v.to(device) for v in vars_], dim=0).mean(dim=0).clamp_min(1e-12)
+                return mu_t, var_t
 
-        if self.selection == "random":
-            i = self._rng.randrange(len(means))
+            # random
+            if self.selection == "random":
+                i = self._rng.randrange(len(means))
+                return means[i].to(device), vars_[i].to(device).clamp_min(1e-12)
+
+            # cycle
+            i = self._cycle_idx % len(means)
+            self._cycle_idx += 1
             return means[i].to(device), vars_[i].to(device).clamp_min(1e-12)
 
-        # cycle
-        i = self._cycle_idx % len(means)
-        self._cycle_idx += 1
-        return means[i].to(device), vars_[i].to(device).clamp_min(1e-12)
-
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        z = self.a_linear(x)  # (B,L,r) or (B,r)
+        z = self.peft_layer(x)  # (B,L,r) or (B,r)
 
         squeeze_back = False
         if z.dim() == 2:
@@ -201,19 +197,12 @@ class PEFTAdaIN(nn.Module):
 
         device = z.device
         mu_t, var_t = self._get_target_stats(device)
-        sigma_t = torch.sqrt(var_t + self.eps).view(1, 1, -1)
-        mu_t = mu_t.view(1, 1, -1)
+        sigma_t = torch.sqrt(var_t + self.eps).unsqueeze(0) # (1, L, r)
+        mu_t = mu_t.unsqueeze(0) # (1, L, r)
 
-        # content stats
-        if self.instance_wise:
-            # per-sample stats over L: (B,1,r)
-            mu_c = z.mean(dim=1, keepdim=True)
-            var_c = z.var(dim=1, keepdim=True, unbiased=False).clamp_min(1e-12)
-        else:
-            # global batch stats over (B*L): (1,1,r)
-            z2 = z.reshape(-1, z.size(-1))
-            mu_c = z2.mean(dim=0).view(1, 1, -1)
-            var_c = z2.var(dim=0, unbiased=False).view(1, 1, -1).clamp_min(1e-12)
+        # content stats (1,L,r)
+        mu_c = z.mean(dim=0, keepdim=True)
+        var_c = z.var(dim=0, keepdim=True, unbiased=False).clamp_min(1e-12)
 
         sigma_c = torch.sqrt(var_c + self.eps)
 
@@ -221,6 +210,7 @@ class PEFTAdaIN(nn.Module):
 
         if squeeze_back:
             z_hat = z_hat.squeeze(1)  # (B,r)
+
         return z_hat
 
 def wrap_lora_A_inplace(
@@ -291,14 +281,14 @@ def apply_adain_transform_to_loraA_for_inference(
     seed: int = 0,
     instance_wise: bool = True,
 ) -> int:
-    style_mode: str = stats_payload["mode"]
+    agg_mode: str = stats_payload["mode"]
 
     def factory(a_mod, key):
         return PEFTAdaIN(
-            a_linear=a_mod,
+            peft_layer=a_mod,
             stats_payload=stats_payload,
             key=key,
-            style_mode=style_mode,
+            agg_mode=agg_mode,
             selection=selection,
             seed=seed,
             instance_wise=instance_wise,
