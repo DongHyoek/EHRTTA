@@ -3,14 +3,11 @@ import random
 import torch
 import torch.nn as nn
 
-StatsMode = Literal["aggregate", "distribution"]
-SelectMode = Literal["mean_of_dist", "random", "cycle"]
-
 class RunningStats:
     """
     채널(r)별 mean/var를 누적 추정.
     z shape: (B, L, r)
-    누적 축: B*L
+    계산 축: B 
     """
     def __init__(self, r: int, device: Optional[torch.device] = None):
         self.r = r
@@ -20,7 +17,7 @@ class RunningStats:
 
     @torch.no_grad()
     def update(self, z: torch.Tensor):
-        z2 = z.detach().reshape(-1, z.size(-1))  # (B*L, r)
+        z2 = z.detach()  # (B, L, r)
         self.sum += z2.sum(dim=0)
         self.sumsq += (z2 ** 2).sum(dim=0)
         self.count += z2.size(0)
@@ -32,21 +29,20 @@ class RunningStats:
         mean = self.sum / denom
         var = (self.sumsq / denom) - mean**2
         var = torch.clamp(var, min=eps)
-        return mean, var
-
+        return mean, var # Shape : (L,r) , (L,r)
 
 class StatsBank:
     """
-    key(레이어 식별자) -> 통계 dict
-    - aggregate: key -> {"mean": (r,), "var": (r,)}
-    - distribution: key -> {"means": [ (r,), ... ], "vars": [ (r,), ... ]}
+    key : 각각의 PEFT layer  
+    - aggregate: key -> {"mean": (L,r), "var": (L,r)}
+    - distribution: key -> {"means": [ (L,r), ... ], "vars": [ (L,r), ... ]}
     """
-    def __init__(self, mode: StatsMode, r: int, device: Optional[torch.device] = None):
+    def __init__(self, mode: str, r: int, device: Optional[torch.device] = None):
         self.mode = mode
         self.r = r
         self.device = device
-        self._agg: Dict[str, RunningStats] = {}
-        self._dist: Dict[str, Dict[str, List[torch.Tensor]]] = {}
+        self._agg = {}
+        self._dist = {}
 
     def _ensure_key(self, key: str):
         if self.mode == "aggregate":
@@ -68,20 +64,22 @@ class StatsBank:
             return
 
         # distribution: 배치별 mean/var 저장
-        z2 = z.detach().reshape(-1, z.size(-1))  # (B*L, r)
+        z2 = z.detach()  # (B, L, r)
         mean = z2.mean(dim=0)
         var = z2.var(dim=0, unbiased=False).clamp_min(1e-12)
-        self._dist[key]["means"].append(mean)
-        self._dist[key]["vars"].append(var)
+        self._dist[key]["means"].append(mean) # (L, r)
+        self._dist[key]["vars"].append(var)   # (L,r)
 
     @torch.no_grad()
     def finalize(self) -> Dict[str, Any]:
         if self.mode == "aggregate":
-            out: Dict[str, Dict[str, torch.Tensor]] = {}
-            for k, rs in self._agg.items():
-                mean, var = rs.finalize()
+            out = {}
+
+            for k, run_stats in self._agg.items():
+                mean, var = run_stats.finalize()
                 out[k] = {"mean": mean, "var": var}
             return out
+        
         else:
             return self._dist
 
@@ -91,7 +89,7 @@ class StatsBank:
     def save(self, path: str):
         torch.save(self.to_payload(), path)
 
-    @staticmethod
+    @staticmethod # 클래스 안에 소속이 되어 있으나, 클래스 내부의 변수를 쓰거나 수정할 일이 없는 독립적인 함수를 나타낼 때
     def load(path: str, map_location: str = "cpu") -> Dict[str, Any]:
         return torch.load(path, map_location=map_location)
     
@@ -107,11 +105,14 @@ class StatsCollector(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         z = self.a_linear(x)
-        # 방어: 일부 구현에서 (B,r)로 나올 수 있으므로 (B,1,r)로 맞춰 bank에 기록
+
+        # 혹시라도 (B,r)로 나올 수 있으므로 (B,1,r)로 맞춰 bank에 기록
         if z.dim() == 2:
             z_ = z.unsqueeze(1)     # (B,1,r)
+
         else:
             z_ = z                  # (B,L,r)
+
         self.bank.update_from_batch(self.key, z_)
         return z
 
@@ -138,8 +139,8 @@ class PEFTAdaIN(nn.Module):
         a_linear: nn.Module,
         stats_payload: Dict[str, Any],
         key: str,
-        style_mode: StatsMode,
-        selection: SelectMode = "mean_of_dist",
+        style_mode: str,
+        selection: str,
         seed: int = 0,
         eps: float = 1e-6,
         instance_wise: bool = True,
@@ -258,11 +259,12 @@ def collect_loraA_stats(
     model: nn.Module,
     dataloaderA,
     r: int = 8,
-    mode: StatsMode = "aggregate",
+    mode: str = "aggregate",
     adapter_name: str = "default",
-    device: Optional[torch.device] = None,
-) -> Dict[str, Any]:
+    device: Optional[torch.device] = None) -> Dict[str, Any]:
+
     model.eval()
+    
     if device is None:
         device = next(model.parameters()).device
 
@@ -284,12 +286,12 @@ def collect_loraA_stats(
 def apply_adain_transform_to_loraA_for_inference(
     model: nn.Module,
     stats_payload: Dict[str, Any],
-    adapter_name: str = "default",
-    selection: SelectMode = "mean_of_dist",
+    adapter_name : str, 
+    selection: str,
     seed: int = 0,
     instance_wise: bool = True,
 ) -> int:
-    style_mode: StatsMode = stats_payload["mode"]
+    style_mode: str = stats_payload["mode"]
 
     def factory(a_mod, key):
         return PEFTAdaIN(
