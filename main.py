@@ -1,5 +1,12 @@
 import os
+import torch
+import random
+import numpy as np
 import argparse
+
+from utils.dataloader import *
+from utils.trainer import *
+from utils.inference import *
 
 def build_parser():
     parser = argparse.ArgumentParser(description='EHRTTA')
@@ -57,6 +64,8 @@ def build_parser():
                         help='Use GPU')
     parser.add_argument('--seed', type=int, default=0,
                         help='random seed of model')
+    parser.add_argument('--eval_mode', default=False , action='store_true',
+                        help='Use GPU')
     parser.add_argument('--log_every', type=int, default=1000,
                         help='frequency of checking the validation accuracy, in minibatches')
     parser.add_argument('--log_dir', type=str, default='logs/',
@@ -67,24 +76,40 @@ def build_parser():
                         help='Calculate test accuracy along with val accuracy')
 
     # data parameters
-    parser.add_argument('--data_path', default='data/',
+    parser.add_argument('--data_path', default='/Users/korea/EHRTTA/data',
                         help='path where data is located')
-    parser.add_argument('--loader', type=str, default='task_incremental_loader',
-                        help='data loader to use')
-    parser.add_argument('--samples_per_task', type=int, default=-1,
-                        help='training samples per task (all if negative)')
-    parser.add_argument('--shuffle_tasks', default=False, action='store_true',
+    parser.add_argument('--var_info_path', default='/Users/korea/EHRTTA/data/concept-dict.json',
+                        help='path where variable information is located')
+    parser.add_argument('--data_source', type=str, default='miiv',
+                        help='the source of the data')
+    parser.add_argument('--task_label', type=str, default='mortality_inunit',
+                        help='the name of downstream task')
+    parser.add_argument('--use_pad', default=False, action='store_true',
                         help='present tasks in order')
-    parser.add_argument('--classes_per_it', type=int, default=4,
-                        help='number of classes in every batch')
+    parser.add_argument('--pid_col', type=str, default='stay_id',
+                        help='the name of patient id column')
+    parser.add_argument('--time_col', type=str, default='charttime',
+                        help='the name of time column')
+    parser.add_argument('--var_col', type=str, default='var_name',
+                        help='the name of variable column for using time series data')
+    parser.add_argument('--text_var_col', type=str, default='full_var_name',
+                        help='the name of variable column for using text generation')
+    parser.add_argument('--val_col', type=str, default='value',
+                        help='the name of offset column')
+    parser.add_argument('--unit_col', type=str, default='fixed_unit',
+                        help='the name of offset column')
+    parser.add_argument("--train_ratio", default=0.8, type=float,
+                        help="train split ratio (0. <= x <= 1.).")
+    parser.add_argument("--val_ratio", default=0.1, type=float,
+                        help="validation split ratio (0. <= x <= 1.).")
+    
+    
     parser.add_argument('--iterations', type=int, default=5000,
                         help='number of classes in every batch')
     parser.add_argument("--dataset", default="mnist_rotations", type=str,
                     help="Dataset to train and test on.")
     parser.add_argument("--workers", default=0, type=int,
                         help="Number of workers preprocessing the data.")
-    parser.add_argument("--validation", default=0., type=float,
-                        help="Validation split (0. <= x <= 1.).")
     parser.add_argument("-order", "--class_order", default="old", type=str,
                         help="define classes order of increment ",
                         choices = ["random", "chrono", "old", "super"])
@@ -152,3 +177,28 @@ def build_parser():
                         help='')
 
     return parser
+
+def fix_seed(seed: int = 42):
+    random.seed(seed) # random
+    np.random.seed(seed) # numpy
+    os.environ["PYTHONHASHSEED"] = str(seed) # os
+    
+    # pytorch
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed) 
+    torch.backends.cudnn.deterministic = True 
+    torch.backends.cudnn.benchmark = False 
+
+
+
+if __name__ == "__main__":
+
+    args = build_parser()
+
+    # fix seed
+    fix_seed(args.seed)
+
+    # build dataset
+    if not args.eval_mode:
+        trn_loader, val_loader, tnt_loader = build_loaders(args)
+
