@@ -7,6 +7,7 @@ import argparse
 from utils.dataloader import *
 from utils.trainer import *
 from utils.inference import *
+from utils.norm import TSScaler
 
 def build_parser():
     parser = argparse.ArgumentParser(description='EHRTTA')
@@ -101,7 +102,14 @@ def build_parser():
                         help="train split ratio (0. <= x <= 1.).")
     parser.add_argument("--val_ratio", default=0.1, type=float,
                         help="validation split ratio (0. <= x <= 1.).")
-    
+    parser.add_argument("--use_ts_trunc", default=False, action='store_true',
+                        help="option for using time series truncation")
+    parser.add_argument("--max_length", default=1000, type=float,
+                        help="max sequence length of time series")
+    parser.add_argument("--use_norm_ema", default=False, action='store_true',
+                        help="option for using input scaling with ema in adaptation session")
+    parser.add_argument("--norm_ema_alpha", default=0.1, type=float,
+                        help="max sequence length of time series")
     
     parser.add_argument('--iterations', type=int, default=5000,
                         help='number of classes in every batch')
@@ -162,7 +170,26 @@ if __name__ == "__main__":
     # fix seed
     fix_seed(args.seed)
 
-    # build dataset
+    # Train mode
     if not args.eval_mode:
+        # build dataset
         trn_loader, val_loader, tnt_loader = build_loaders(args)
+        
+        for epoch in range(1, args.max_epochs + 1):
+            
+            for batch in enumerate(trn_loader): 
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    # Evaluation mode (Test-time adaptation)
+    else:
+        # build dataset
+        _, _, eval_loader = build_loaders(args)
 

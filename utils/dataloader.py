@@ -25,6 +25,8 @@ class ISTS_EHR_Dataset(Dataset):
         super(ISTS_EHR_Dataset, self).__init__()
         
         self.args = args
+        self.use_ts_trunc = args.use_ts_trunc
+        self.max_length = args.max_length # (Option -> 만약 너무 긴 데이터가 들어왔을 때 처리하기 위한 상한선 설정)
         self.pids = splited_ids
 
         self.task_label = args.task_label
@@ -43,7 +45,6 @@ class ISTS_EHR_Dataset(Dataset):
 
         self.pid2y = dict(zip(outcomes[self.pid].tolist(), outcomes[self.task_label].tolist()))
         self.pid2ts = {pid: g for pid, g in self.ts_df.groupby(self.pid)}
-        self.max_events_per_var = getattr(args, "max_events_per_var", None) # (Option -> 만약 너무 긴 데이터가 들어왔을 때 처리하기 위한 상한선 설정)
 
     def __len__(self):
         return len(self.pids)
@@ -57,17 +58,19 @@ class ISTS_EHR_Dataset(Dataset):
         vars_list = []
 
         for col in self.ts_cols:
-            if group is None:
+            group_value = group[group["var_name"] == col]
+            
+            if group_value.empty:
                 t_list, x_list = [], []
+
             else:
-                group_value = group[group["var_name"] == col]
                 time_values = group_value[self.offset].to_numpy(dtype=np.float32)
-                x_values = group_value["value"].to_numpy(dtype=np.float32)
+                x_values = group_value[self.args.val_col].to_numpy(dtype=np.float32)
 
                 # 최근 N개 제한(원하면)
-                if self.max_events_per_var is not None and len(time_values) > self.max_events_per_var:
-                    time_values = time_values[-self.max_events_per_var:]
-                    x_values = x_values[-self.max_events_per_var:]
+                if self.use_ts_trunc and len(time_values) > self.max_length:
+                    time_values = time_values[-self.max_length:]
+                    x_values = x_values[-self.max_length:]
 
                 t_list = time_values.tolist()
                 x_list = x_values.tolist()
@@ -426,7 +429,7 @@ class MappingData:
         return var_normal_min, var_normal_max, var_unit, source_category, source_table, source_column, source_itemid, source_callback, source_vars
 
     def build_mapping_df(self):
-        var_normal_min, var_normal_max, var_unit, source_category, source_table, source_column, source_itemid, source_callback, source_vars  = _load_selected_vars()
+        var_normal_min, var_normal_max, var_unit, source_category, source_table, source_column, source_itemid, source_callback, source_vars  = self._load_selected_vars()
 
         mapping_df = pd.DataFrame({
             'var_name' : source_vars,
@@ -465,6 +468,7 @@ class MappingData:
         
         return mapping_df, [full_name_dict[i] for i in self.lab_cols], [full_name_dict[i] for i in self.output_cols]
 
+
 def make_collate_ists_with_text(D, text_bundle : TextBundle):
 
     def collate(batch):
@@ -477,7 +481,7 @@ def make_collate_ists_with_text(D, text_bundle : TextBundle):
         for sample in batch:
             assert len(sample["vars"]) == D
             for d in range(D):
-                lengths.append(len(s["vars"][d]["t"]))
+                lengths.append(len(sample["vars"][d]["t"]))
         Lmax = max(lengths) if lengths else 0
 
         tt = torch.zeros(B, D, Lmax, dtype=torch.float32)
@@ -489,11 +493,13 @@ def make_collate_ists_with_text(D, text_bundle : TextBundle):
                 t = torch.as_tensor(sample["vars"][d]["t"], dtype=torch.float32)
                 x = torch.as_tensor(sample["vars"][d]["x"], dtype=torch.float32)
                 Ld = t.numel()
-                if Ld == 0:
+
+                if Ld == 0: # if the variable is not observed -> all values are zero
                     continue
-                tt[b, d, :Ld] = t
-                xx[b, d, :Ld] = x
-                mask[b, d, :Ld] = 1.0
+
+                tt[b, d, :Ld] = t         # (B, D, L)
+                xx[b, d, :Ld] = x         # (B, D, L)
+                mask[b, d, :Ld] = 1.0     # (B, D, L)
 
         # ---- Text (pid와 매칭) ----
         texts = [text_bundle.get_markdown(pid) for pid in pids]
