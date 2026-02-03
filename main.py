@@ -9,6 +9,11 @@ from utils.trainer import *
 from utils.inference import *
 from utils.norm import TSScaler
 
+from models.align import ModalityAlignment
+from models.embed import DataEmbedding_ITS_Pooled, masked_mean_pool_seq
+from models.llm import *
+from models.tta import *
+
 def build_parser():
     parser = argparse.ArgumentParser(description='EHRTTA')
     parser.add_argument('--expt_name', type=str, default='test_lamaml',
@@ -59,13 +64,19 @@ def build_parser():
     parser.add_argument('--lr', type=float, default=1e-3,
                         help='learning rate (For baselines)')
 
-    # experiment parameters
+    # experiment parameters 1
     parser.add_argument('--cuda', default=False , action='store_true',
                         help='Use GPU')
+    parser.add_argument('--device', type=int, default=0,
+                        help='the number of GPU device')
     parser.add_argument('--seed', type=int, default=0,
                         help='random seed of model')
     parser.add_argument('--eval_mode', default=False , action='store_true',
                         help='Use GPU')
+
+    # experiment parameters 2
+    parser.add_argument('--max_epochs', type=int, default=50,
+                        help='max epochs of training session')
     parser.add_argument('--log_every', type=int, default=1000,
                         help='frequency of checking the validation accuracy, in minibatches')
     parser.add_argument('--log_dir', type=str, default='logs/',
@@ -110,19 +121,17 @@ def build_parser():
                         help="option for using input scaling with ema in adaptation session")
     parser.add_argument("--norm_ema_alpha", default=0.1, type=float,
                         help="max sequence length of time series")
+    parser.add_argument("--workers", default=0, type=int,
+                        help="Number of workers preprocessing the data.")
     
     parser.add_argument('--iterations', type=int, default=5000,
                         help='number of classes in every batch')
-    parser.add_argument("--dataset", default="mnist_rotations", type=str,
-                    help="Dataset to train and test on.")
-    parser.add_argument("--workers", default=0, type=int,
-                        help="Number of workers preprocessing the data.")
     parser.add_argument("-order", "--class_order", default="old", type=str,
                         help="define classes order of increment ",
                         choices = ["random", "chrono", "old", "super"])
     parser.add_argument("-inc", "--increment", default=5, type=int,
                         help="number of classes to increment by in class incremental loader")
-    parser.add_argument('--test_batch_size', type=int, default=100000 ,
+    parser.add_argument('--test_batch_size', type=int, default=100000,
                         help='batch size to use during testing.')
 
 
@@ -177,10 +186,10 @@ if __name__ == "__main__":
         
         for epoch in range(1, args.max_epochs + 1):
             
-            for batch in enumerate(trn_loader): 
+            for batch in tqdm(trn_loader): 
+                print('dooooitttt')
     
-    
-    
+                ######
     
     
     
@@ -192,4 +201,7 @@ if __name__ == "__main__":
     else:
         # build dataset
         _, _, eval_loader = build_loaders(args)
+
+        for batch in tqdm(eval_loader):
+            print('doooooitttt')
 
