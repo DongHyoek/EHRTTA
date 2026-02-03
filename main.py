@@ -58,7 +58,6 @@ def build_parser():
     parser.add_argument('--lr', type=float, default=1e-3,
                         help='learning rate (For baselines)')
 
-    
     # experiment parameters
     parser.add_argument('--cuda', default=False , action='store_true',
                         help='Use GPU')
@@ -140,41 +139,6 @@ def build_parser():
     parser.add_argument('--second_order', default=False , action='store_true',
                         help='use second order MAML updates')
 
-
-   # memory parameters for GEM | AGEM | ICARL 
-    parser.add_argument('--n_memories', type=int, default=0,
-                        help='number of memories per task')
-    parser.add_argument('--memory_strength', default=0, type=float,
-                        help='memory strength (meaning depends on memory)')
-    parser.add_argument('--steps_per_sample', default=1, type=int,
-                        help='training steps per batch')
-
-
-    # parameters specific to MER 
-    parser.add_argument('--gamma', type=float, default=1.0,
-                        help='gamma learning rate parameter')
-    parser.add_argument('--beta', type=float, default=1.0,
-                        help='beta learning rate parameter')
-    parser.add_argument('--s', type=float, default=1,
-                        help='current example learning rate multiplier (s)')
-    parser.add_argument('--batches_per_example', type=float, default=1,
-                        help='the number of batch per incoming example')
-
-
-    # parameters specific to Meta-BGD
-    parser.add_argument('--bgd_optimizer', type=str, default="bgd", choices=["adam", "adagrad", "bgd", "sgd"],
-                    help='Optimizer.')
-    parser.add_argument('--optimizer_params', default="{}", type=str, nargs='*',
-                        help='Optimizer parameters')
-
-    parser.add_argument('--train_mc_iters', default=5, type=int,
-                        help='Number of MonteCarlo samples during training(default 10)')
-    parser.add_argument('--std_init', default=5e-2, type=float,
-                        help='STD init value (default 5e-2)')
-    parser.add_argument('--mean_eta', default=1, type=float,
-                        help='Eta for mean step (default 1)')
-    parser.add_argument('--fisher_gamma', default=0.95, type=float,
-                        help='')
 
     return parser
 
