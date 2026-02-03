@@ -17,3 +17,27 @@
 huggingface-cli login  # insert your tokens
 
 ```
+
+# Codes Information & Organization
+```
+EHRTTA
+├─data
+│  ├─eicu
+│  ├─hirid
+│  └─miiv
+├─images
+├─models
+│  ├─align.py
+│  ├─embed.py
+│  ├─llm.py 
+│  └─tta.py
+├─preprocess
+│  └─ehr
+├─scripts
+├─utils
+│  ├─dataloader.py
+│  ├─inference.py
+│  ├─norm.py 
+│  └─trainer.py
+
+```
