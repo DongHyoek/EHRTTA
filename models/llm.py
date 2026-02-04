@@ -6,9 +6,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from transformers import AutoConfig, AutoTokenizer, AutoModel
+from transformers import AutoConfig, AutoModel
 from peft import LoraConfig, get_peft_model, TaskType
-from tta import *
+from models.tta import PEFTAdaINPatcher
 
 class PEFTTSLLM(nn.Module):
     def __init__(self, args):
@@ -22,7 +22,7 @@ class PEFTTSLLM(nn.Module):
         backbone = AutoModel.from_pretrained(
             args.model_id,
             torch_dtype=torch.bfloat16,
-            device_map="auto"
+            device_map=args.device
             )
 
         # 1) backbone freeze
@@ -71,26 +71,22 @@ class PEFTTSLLM(nn.Module):
         else:
             raise ValueError("pooling must be 'last' or 'mean'")
 
-    def forward(self, input_ids: Optional[torch.Tensor] = None, inputs_embeds: Optional[torch.Tensor] = None, 
-                attention_mask: Optional[torch.Tensor] = None, labels: Optional[torch.Tensor] = None) -> Dict[str, Any]:
+    def forward(self, inputs_embeds: Optional[torch.Tensor] = None, attention_mask: Optional[torch.Tensor] = None, labels: Optional[torch.Tensor] = None) -> Dict[str, Any]:
         """
-        input_ids(이미 토크나이즈된 정수) OR inputs_embeds(이미 임베딩된 벡터) 둘 중 하나를 주입.
+        inputs_embeds(이미 임베딩된 벡터 = aligned) 둘 중 하나를 주입.
         transformers AutoModel은 inputs_embeds를 지원함. :contentReference[oaicite:4]{index=4}
         """
 
-        outputs = self.backbone(
-            input_ids=input_ids,
-            inputs_embeds=inputs_embeds,
-            attention_mask=attention_mask,
-            return_dict=True,
-        )
-        
-        h = outputs.last_hidden_state  # (B, L, H)
+        if labels is not None: # source train mode
+            outputs = self.backbone(inputs_embeds=inputs_embeds, attention_mask=attention_mask, return_dict=True)
+        else: # target adaptation mode
+            outputs = self.backbone_w_tta(inputs_embeds=inputs_embeds, attention_mask=attention_mask, return_dict=True)
+            
+            h = outputs.last_hidden_state  # (B, L, H)
 
-        pooled = self._pool(h, attention_mask)  # (B, H)
-        logits = self.head(pooled)              # (B, C) or (B, 1)
+            pooled = self._pool(h, attention_mask)  # (B, H)
+            logits = self.head(pooled)              # (B, C) or (B, 1)
 
-        if labels is not None:
             if self.args.task == "classification":
                 loss = F.cross_entropy(logits, labels.long())
             else:

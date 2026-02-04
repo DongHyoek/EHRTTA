@@ -4,21 +4,15 @@ import random
 import numpy as np
 import argparse
 
-from utils.dataloader import *
-from utils.trainer import *
-from utils.inference import *
-from utils.norm import TSScaler
+from tqdm import tqdm
 
-from models.align import ModalityAlignment
-from models.embed import DataEmbedding_ITS_Pooled, masked_mean_pool_seq
-from models.llm import *
-from models.tta import *
+from utils.dataloader import build_loaders
+from utils.experiment import train, inference, adaptation
 
 def build_parser():
-    parser = argparse.ArgumentParser(description='EHRTTA')
-    parser.add_argument('--expt_name', type=str, default='test_lamaml',
-                    help='name of the experiment')
     
+    parser = argparse.ArgumentParser(description='EHRTTA')
+
     # LLM model details
     parser.add_argument('--model_id', type=str, default='meta-llama/Llama-3.1-8B',
                         help='define the llm model type to use')
@@ -38,6 +32,8 @@ def build_parser():
                         help='the pooling method of output hidden vectors in LLM')
     parser.add_argument('--e_pool', type=str, default='mean',
                         help='the pooling method of vectors in time series embedding modules')
+    parser.add_argument("--text_pad_type", type=str, default='longest',
+                        help="padding type of text data")
 
     # TTA methods details
     parser.add_argument('--statsmode', type=str, default='aggregate',
@@ -46,37 +42,14 @@ def build_parser():
                         help='define the method for using distribution of statistics')
     parser.add_argument('--use_tta', default=True, action='store_true',
                         help='select using tta or not')
-    
-    # optimizer parameters influencing all models
-    parser.add_argument('--use_loss_weight', default=False , action='store_true',
-                        help='use second order MAML updates')
-    parser.add_argument("--glances", default=1, type=int,
-                        help="Number of times the model is allowed to train over a set of samples in the single pass setting") 
-    parser.add_argument('--n_epochs', type=int, default=1,
-                        help='Number of epochs per task')
-    parser.add_argument('--batch_size', type=int, default=1,
-                        help='the amount of items received by the algorithm at one time (set to 1 across all ' +
-                        'experiments). Variable name is from GEM project.')
-    parser.add_argument('--replay_batch_size', type=float, default=20,
-                        help='The batch size for experience replay.')
-    parser.add_argument('--memories', type=int, default=5120, 
-                        help='number of total memories stored in a reservoir sampling based buffer')
-    parser.add_argument('--lr', type=float, default=1e-3,
-                        help='learning rate (For baselines)')
 
     # experiment parameters 1
     parser.add_argument('--cuda', default=False , action='store_true',
                         help='Use GPU')
-    parser.add_argument('--device', type=int, default=0,
-                        help='the number of GPU device')
     parser.add_argument('--seed', type=int, default=0,
                         help='random seed of model')
-    parser.add_argument('--eval_mode', default=False , action='store_true',
-                        help='Use GPU')
-
-    # experiment parameters 2
-    parser.add_argument('--max_epochs', type=int, default=50,
-                        help='max epochs of training session')
+    parser.add_argument('--adapt_mode', default=False , action='store_true',
+                        help='adaptation_mode')
     parser.add_argument('--log_every', type=int, default=1000,
                         help='frequency of checking the validation accuracy, in minibatches')
     parser.add_argument('--log_dir', type=str, default='logs/',
@@ -85,6 +58,20 @@ def build_parser():
                         help='(not set by user)')
     parser.add_argument('--calc_test_accuracy', default=False , action='store_true',
                         help='Calculate test accuracy along with val accuracy')
+    
+    # optimizer parameters influencing all models
+    parser.add_argument('--n_epochs', type=int, default=1, 
+                        help='number of epochs')
+    parser.add_argument('--lr', type=float, default=1e-3, 
+                        help='learning rate (For baselines)')
+    parser.add_argument('--weight_decay', type=float, default=1e-4, 
+                        help='weight decay of optimizer')
+    parser.add_argument('--batch_size', type=int, default=32, 
+                        help='batch size for dataloader')
+    parser.add_argument('--scheduler', default=False , action='store_true',
+                        help='use scheduler for training')
+    parser.add_argument('--loss_type', type=str, default='crossentropy', 
+                        help='objective function for training')
 
     # data parameters
     parser.add_argument('--data_path', default='/Users/korea/EHRTTA/data',
@@ -156,7 +143,6 @@ def build_parser():
     parser.add_argument('--second_order', default=False , action='store_true',
                         help='use second order MAML updates')
 
-
     return parser
 
 def fix_seed(seed: int = 42):
@@ -170,38 +156,38 @@ def fix_seed(seed: int = 42):
     torch.backends.cudnn.deterministic = True 
     torch.backends.cudnn.benchmark = False 
 
-
-
 if __name__ == "__main__":
 
-    args = build_parser()
+    parser = build_parser()
+    args = parser.parse_args()
 
     # fix seed
     fix_seed(args.seed)
-
+    
+    print('Build Dataloaders..')
     # Train mode
-    if not args.eval_mode:
+    if not args.adapt_mode:
         # build dataset
         trn_loader, val_loader, tnt_loader = build_loaders(args)
         
-        for epoch in range(1, args.max_epochs + 1):
-            
-            for batch in tqdm(trn_loader): 
-                print('dooooitttt')
-    
-                ######
-    
-    
-    
-    
-    
-    
-    
+        for batch in trn_loader:
+            tt, xx, mask, texts, y, pids = batch
+            print(tt.shape, tt)
+            print(xx.shape, xx)
+            print(mask.shape, mask)
+            print(len(texts))
+            print(y.shape, y)
+            print(len(pids), pids)
+            break
+
+        raise 
+        train_result = train(args, trn_loader, val_loader)
+        test_result = inference(args, tnt_loader)
+
+
     # Evaluation mode (Test-time adaptation)
     else:
         # build dataset
         _, _, eval_loader = build_loaders(args)
 
-        for batch in tqdm(eval_loader):
-            print('doooooitttt')
-
+        adaptation_result = adaptation(args, eval_loader)

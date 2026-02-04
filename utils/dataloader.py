@@ -86,22 +86,25 @@ class TextBundle:
     - 결과 markdown을 캐싱해서 반환
     - text generator : TextGeneration Class
     """
-    def __init__(self, args, text_generator, dynamics_df: pd.DataFrame, static_df: pd.DataFrame, 
-                 mapping_df: pd.DataFrame, lab_var_list: List[str], output_var_names=['Urine output']):
+    def __init__(self, args, text_generator, dynamics_df: pd.DataFrame, static_df: pd.DataFrame, mapping_df: pd.DataFrame, 
+                 text_var_col : List[str], lab_var_list: List[str], output_var_names=['Urine output']):
         
         self.args = args
         self.mapping_df = mapping_df
         self.text_gen = text_generator
+        self.text_var_col = text_var_col
         self.lab_var_list = lab_var_list
         self.output_var_names = output_var_names
 
+        merged_df = pd.merge(dynamics_df, mapping_df[[args.var_col, args.text_var_col]], on = args.var_col, how = 'left')
+
         # text용 관측치만 분리해 둠 (lab+output)
         # dynamics_df에 full_var_name 컬럼이 있어야 함
-        self.text_df = dynamics_df[dynamics_df[self.text_var_col].isin(lab_var_list + list(self.output_var_names))].copy()
+        self.text_df = merged_df[merged_df[self.text_var_col].isin(lab_var_list + self.output_var_names)].copy()
         self.text_df = self.text_df.sort_values([args.pid_col, args.time_col])
 
         # demographics도 pid로 묶을 수 있게 준비
-        self.static_df = static_df.copy()
+        self.static_df = pd.merge(static_df, mapping_df[[args.var_col, args.text_var_col]], on = args.var_col, how = 'left')
 
         # pid -> df group cache (빨리 꺼내기)
         self.pid2obs = {pid: g for pid, g in self.text_df.groupby(args.pid_col)}
@@ -154,8 +157,6 @@ class TextGeneration(nn.Module):
         normal_ranges: {"WBC": (4,11), ...}
         output_var_names: variables to treat as "Output Events" section
         """
-
-        output_var_names = output_var_names or set()
 
         df = observations.copy()
         df[self.val_col] = pd.to_numeric(df[self.val_col], errors="coerce")
@@ -359,10 +360,10 @@ class TextGeneration(nn.Module):
 class MappingData:
     def __init__(self, args, df, all_var_cols, lab_cols, output_cols):
         self.args = args
-        self.all_var_list = all_var_cols
+        self.all_var_cols = all_var_cols
         self.lab_cols = lab_cols
         self.output_cols = output_cols
-        self.meta_data = df
+        self.metadata = df
 
     def _load_selected_vars(self):
         """
@@ -381,7 +382,7 @@ class MappingData:
         source_itemid = []
         source_callback = []
         source_vars = [] # to map other lists
-        for var in tqdm(self.all_var_list):
+        for var in tqdm(self.all_var_cols):
 
             for i in range(len(self.metadata[var]['sources'][self.args.data_source])): # 여러 테이블에 분산되어 있는 경우 길이가 2가 넘을 수 있기 때문
 
@@ -481,7 +482,7 @@ def make_collate_ists_with_text(D, text_bundle : TextBundle):
         for sample in batch:
             assert len(sample["vars"]) == D
             for d in range(D):
-                lengths.append(len(sample["vars"][d]["t"]))
+                lengths.append(len(sample["vars"][d]["time"]))
         Lmax = max(lengths) if lengths else 0
 
         tt = torch.zeros(B, D, Lmax, dtype=torch.float32)
@@ -490,15 +491,15 @@ def make_collate_ists_with_text(D, text_bundle : TextBundle):
 
         for b, sample in enumerate(batch):
             for d in range(D):
-                t = torch.as_tensor(sample["vars"][d]["t"], dtype=torch.float32)
-                x = torch.as_tensor(sample["vars"][d]["x"], dtype=torch.float32)
-                Ld = t.numel()
+                time = torch.as_tensor(sample["vars"][d]["time"], dtype=torch.float32)
+                value = torch.as_tensor(sample["vars"][d]["value"], dtype=torch.float32)
+                Ld = time.numel()
 
                 if Ld == 0: # if the variable is not observed -> all values are zero
                     continue
 
-                tt[b, d, :Ld] = t         # (B, D, L)
-                xx[b, d, :Ld] = x         # (B, D, L)
+                tt[b, d, :Ld] = time         # (B, D, L)
+                xx[b, d, :Ld] = value         # (B, D, L)
                 mask[b, d, :Ld] = 1.0     # (B, D, L)
 
         # ---- Text (pid와 매칭) ----
@@ -516,8 +517,8 @@ def split_stay_ids_ehr(args, df):
     
     df = df.sort_values(args.pid_col).copy()
     stay_ids = df[args.pid_col].values
-    labels   = df['los'].values # doing startify split by using los output (= patient los)
-    
+    labels   = df['los_reg'].values # doing startify split by using los output (= patient los)
+
     train_ids, temp_ids, train_lbls, temp_lbls = train_test_split(
         stay_ids, labels,
         train_size=args.train_ratio,
@@ -559,25 +560,27 @@ def build_loaders(args):
     all_var_cols = dg_cols + ts_cols + lab_cols + output_cols
 
     # 3) Genearte mapping dataframe 
-    mapping_df, lab_var_list, output_var_names = MappingData(args, df=metadata, all_var_cols=all_var_cols, lab_cols=lab_cols, output_cols=output_cols)
-    
+    mappingdata = MappingData(args, df=metadata, all_var_cols=all_var_cols, lab_cols=lab_cols, output_cols=output_cols)
+    mapping_df, lab_var_list, output_var_names = mappingdata.build_mapping_df()
+
     # 4) Generate TextGeneration + TextBundle 
     text_gen = TextGeneration(time_col=args.time_col, id_col=args.pid_col,
-                              var_col="full_var_name", val_col="value", unit_col="fixed_unit",
+                              text_var_col="full_var_name", val_col="value", unit_col="fixed_unit",
                               normal_min="normal_min", normal_max="normal_max", round_ndigits=1)
 
-    text_bundle = TextBundle(dynamics_df=dynamics_df,
+    text_bundle = TextBundle(args, dynamics_df=dynamics_df,
                              static_df=static_df,
                              mapping_df=mapping_df,
+                             text_var_col="full_var_name",
                              text_generator=text_gen,
                              lab_var_list=lab_var_list,
                              output_var_names=output_var_names)
 
     # 4) When using DataLoader it gets text, ts modalities
-    collate_fn = make_collate_ists_with_text(D, text_bundle)
+    collate_fn = make_collate_ists_with_text(len(ts_cols), text_bundle)
     
     # 5) Generate Timeseries Data and Final Loader
-    if not args.eval_mode:
+    if not args.adapt_mode:
         train_ids, valid_ids, test_ids = split_stay_ids_ehr(args, df=outcome_df) # get splited ids
 
         train_ds = ISTS_EHR_Dataset(args, dynamics_df, outcome_df, ts_cols, train_ids)
@@ -603,4 +606,3 @@ def build_loaders(args):
                                                 shuffle=False, num_workers=0, collate_fn=collate_fn)
         
         return _, _, eval_loader
-

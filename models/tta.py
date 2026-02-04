@@ -161,7 +161,7 @@ class AdaIN(nn.Module):
         self._cycle_idx = 0
 
     @torch.no_grad()
-    def _get_target_stats(self, device: torch.device) -> Tuple[torch.Tensor, torch.Tensor]:
+    def _get_target_stats(self, device) -> Tuple[torch.Tensor, torch.Tensor]:
         entry = self.data[self.key]
 
         # use stats scalar values 
