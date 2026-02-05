@@ -47,7 +47,7 @@ class CrossAttnBlock(nn.Module):
         super(CrossAttnBlock, self).__init__()
 
         if d_ff is None:
-            d_ff = 4 * d_model
+            d_ff = 2 * d_model # e.g. 4096 * 2 = 8192
 
         self.ln_q = nn.LayerNorm(d_model)
         self.ln_kv = nn.LayerNorm(d_model)
@@ -105,7 +105,8 @@ class ModalityAlignment(nn.Module):
     2-layer stack of CrossAttnBlock.
     Q = time-series tokens, K/V = text tokens.
     """
-    def __init__(self, d_model: int, n_heads: int, d_ff: Optional[int] = None, dropout: float = 0.0, use_gating: bool = True, gate_init: float = 0.1):
+    def __init__(self, d_model: int, n_heads: int, d_ff: Optional[int] = None, 
+                 dropout: float = 0.0, use_gating: bool = True, gate_init: float = 0.1):
 
         super(ModalityAlignment, self).__init__()
 
@@ -113,6 +114,8 @@ class ModalityAlignment(nn.Module):
         self.block2 = CrossAttnBlock(d_model, n_heads, d_ff, dropout, use_gating, gate_init)
 
     def forward(self, ts: torch.Tensor, text: torch.Tensor, text_key_padding_mask: Optional[torch.Tensor] = None, need_weights: bool = False) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+
+        text_key_padding_mask = (text_key_padding_mask == 0)  # bool tensor (B, N)
 
         ts, w1 = self.block1(ts, text, text_key_padding_mask=text_key_padding_mask, need_weights=need_weights)
         ts, w2 = self.block2(ts, text, text_key_padding_mask=text_key_padding_mask, need_weights=need_weights)

@@ -13,13 +13,30 @@ def build_parser():
     
     parser = argparse.ArgumentParser(description='EHRTTA')
 
+    # Embedding modle details
+    parser.add_argument('--use_time', default=False, action='store_true',
+                        help='define using time embedding')
+    parser.add_argument('--te_dropout', type=float, default=0.1,
+                        help='the dropout rate of time series embdding modules')
+    parser.add_argument('--use_norm_ema', default=False, action='store_true',
+                        help='use normalization with ema')
+    parser.add_argument('--norm_ema_alpha', type=float, default=0.1,
+                        help='define the alpha value for ema')
+    parser.add_argument('--align_n_heads', type=int, default=8,
+                        help='the number of heads for cross attention')
+    parser.add_argument('--align_dropout', type=float, default=0.0,
+                        help='the dropout rate of cross attention modules')
+    parser.add_argument('--align_return_weights', default=False, action='store_true',
+                        help='the option of return attn weights')
+    parser.add_argument('--use_align_gate', default=False, action='store_true',
+                        help='use gate mechanism in crossattention')
+
+    
     # LLM model details
     parser.add_argument('--model_id', type=str, default='meta-llama/Llama-3.1-8B',
                         help='define the llm model type to use')
-    parser.add_argument('--peft_type', type=str, default='dora',
-                        help='define the peft algorithm')
-    parser.add_argument('--task', type=str, default='classification', 
-                        help='task for training', choices = ['classification', 'regression'])
+    parser.add_argument('--use_dora', default=False, action='store_true',
+                        help='option of using dora method')
     parser.add_argument('--rank_dim', type=int, default=8,
                         help='the dimension of the low-rank matrices')
     parser.add_argument('--peft_alpha', type=int, default=16,
@@ -72,6 +89,8 @@ def build_parser():
                         help='use scheduler for training')
     parser.add_argument('--loss_type', type=str, default='crossentropy', 
                         help='objective function for training')
+    parser.add_argument('--grad_clip_norm', type=float, default=2.0,
+                        help='Clip the gradients by this value')
 
     # data parameters
     parser.add_argument('--data_path', default='/Users/korea/EHRTTA/data',
@@ -80,10 +99,12 @@ def build_parser():
                         help='path where variable information is located')
     parser.add_argument('--data_source', type=str, default='miiv',
                         help='the source of the data')
+    parser.add_argument('--task', type=str, default='classification', 
+                        help='task for training classification or regression')
     parser.add_argument('--task_label', type=str, default='mortality_inunit',
                         help='the name of downstream task')
-    parser.add_argument('--use_pad', default=False, action='store_true',
-                        help='present tasks in order')
+    parser.add_argument('--num_labels', type=int, default=2, 
+                        help='the number of labels for task. if regression task set to be 1')
     parser.add_argument('--pid_col', type=str, default='stay_id',
                         help='the name of patient id column')
     parser.add_argument('--time_col', type=str, default='charttime',
@@ -104,12 +125,10 @@ def build_parser():
                         help="option for using time series truncation")
     parser.add_argument("--max_length", default=1000, type=float,
                         help="max sequence length of time series")
-    parser.add_argument("--use_norm_ema", default=False, action='store_true',
-                        help="option for using input scaling with ema in adaptation session")
-    parser.add_argument("--norm_ema_alpha", default=0.1, type=float,
-                        help="max sequence length of time series")
-    parser.add_argument("--workers", default=0, type=int,
+    parser.add_argument("--num_workers", default=0, type=int,
                         help="Number of workers preprocessing the data.")
+    parser.add_argument('--n_time_cols', type=int, default=7,
+                        help='the number of time series columns')
     
     parser.add_argument('--iterations', type=int, default=5000,
                         help='number of classes in every batch')
@@ -120,28 +139,6 @@ def build_parser():
                         help="number of classes to increment by in class incremental loader")
     parser.add_argument('--test_batch_size', type=int, default=100000,
                         help='batch size to use during testing.')
-
-
-    # La-MAML parameters
-    parser.add_argument('--opt_lr', type=float, default=1e-1,
-                        help='learning rate for LRs')
-    parser.add_argument('--opt_wt', type=float, default=1e-1,
-                        help='learning rate for weights')
-    parser.add_argument('--alpha_init', type=float, default=1e-3,
-                        help='initialization for the LRs')
-    parser.add_argument('--learn_lr', default=False, action='store_true',
-                        help='model should update the LRs during learning')
-    parser.add_argument('--sync_update', default=False , action='store_true',
-                        help='the LRs and weights should be updated synchronously')
-
-    parser.add_argument('--grad_clip_norm', type=float, default=2.0,
-                        help='Clip the gradients by this value')
-    parser.add_argument("--cifar_batches", default=3, type=int,
-                        help="Number of batches in inner trajectory") 
-    parser.add_argument('--use_old_task_memory', default=False, action='store_true', 
-                        help='Use only old task samples for replay buffer data')    
-    parser.add_argument('--second_order', default=False , action='store_true',
-                        help='use second order MAML updates')
 
     return parser
 
@@ -170,19 +167,20 @@ if __name__ == "__main__":
         # build dataset
         trn_loader, val_loader, tnt_loader = build_loaders(args)
         
-        for batch in trn_loader:
-            tt, xx, mask, texts, y, pids = batch
-            print(tt.shape, tt)
-            print(xx.shape, xx)
-            print(mask.shape, mask)
-            print(len(texts))
-            print(y.shape, y)
-            print(len(pids), pids)
-            break
+        # for batch in trn_loader:
+        #     tt, xx, mask, texts, y, pids = batch
+        #     print(tt.shape)   # (B,D,L)
+        #     print(xx.shape)   # (B,D,L)
+        #     print(mask.shape) # (B,D,L)
+        #     print(len(texts)) # (B), list
+        #     print(y.shape)    # (B), tensor
+        #     print(len(pids))  # (B), list
+        #     break 
 
-        raise 
+        # raise 
+
         train_result = train(args, trn_loader, val_loader)
-        test_result = inference(args, tnt_loader)
+        # test_result = inference(args, tnt_loader)
 
 
     # Evaluation mode (Test-time adaptation)

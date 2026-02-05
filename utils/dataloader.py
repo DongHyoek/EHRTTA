@@ -30,30 +30,32 @@ class ISTS_EHR_Dataset(Dataset):
         self.pids = splited_ids
 
         self.task_label = args.task_label
-        self.pid = args.pid_col
+        self.pid_col = args.pid_col
         self.offset = args.time_col
         self.ts_cols = ts_cols
+        
 
         self.D = len(self.ts_cols)
 
         # ts_df는 var_name 컬럼 기준이라고 가정(필요하면 full_var_name로 바꿔도 됨)
-        self.ts_df = df[(df[self.args.var_col].isin(self.ts_cols)) & (df[self.pid].isin(self.pids))].copy()
-        self.ts_df = self.ts_df.sort_values([self.pid, self.args.var_col, self.offset])
+        self.ts_df = df[(df[self.args.var_col].isin(self.ts_cols)) & (df[self.pid_col].isin(self.pids))].copy()
+        self.ts_df = self.ts_df.sort_values([self.pid_col, self.args.var_col, self.offset])
+        self.empty_group = self.ts_df.iloc[0:0].copy()  # same columns, for empty groups
 
-        outcomes = outcome_df[[self.pid, self.task_label]].sort_values(self.pid)
-        outcomes = outcomes[outcomes[self.pid].isin(self.pids)]
+        outcomes = outcome_df[[self.pid_col, self.task_label]].sort_values(self.pid_col)
+        outcomes = outcomes[outcomes[self.pid_col].isin(self.pids)]
 
-        self.pid2y = dict(zip(outcomes[self.pid].tolist(), outcomes[self.task_label].tolist()))
-        self.pid2ts = {pid: g for pid, g in self.ts_df.groupby(self.pid)}
+        self.pid2y = dict(zip(outcomes[self.pid_col].tolist(), outcomes[self.task_label].tolist()))
+        self.pid2ts = {pid: g for pid, g in self.ts_df.groupby(self.pid_col)}
 
     def __len__(self):
         return len(self.pids)
     
     def __getitem__(self, index):
         pid = self.pids[index]
-        y = int(self.pid2y[pid])  
+        y = int(self.pid2y[pid])
 
-        group = self.pid2ts[pid]
+        group = self.pid2ts.get(pid, self.empty_group) # if [pid] patient have no observations, it returns empty dataframe
 
         vars_list = []
 
@@ -516,8 +518,8 @@ def split_stay_ids_ehr(args, df):
     """
     
     df = df.sort_values(args.pid_col).copy()
-    stay_ids = df[args.pid_col].values
-    labels   = df['los_reg'].values # doing startify split by using los output (= patient los)
+    stay_ids = df[args.pid_col].values.tolist()
+    labels   = df['los_reg'].values.tolist() # doing startify split by using los output (= patient los)
 
     train_ids, temp_ids, train_lbls, temp_lbls = train_test_split(
         stay_ids, labels,
@@ -536,7 +538,6 @@ def split_stay_ids_ehr(args, df):
     )
 
     print(f"Train size: {len(train_ids)}, Valid size: {len(valid_ids)}, Test size: {len(test_ids)}")
-    print(f"Train positive label: {sum(train_lbls)}, Valid Label positive label: {sum(valid_lbls)}, Test Label positive label : {sum(test_lbls)}")
     
     return train_ids, valid_ids, test_ids
 
@@ -586,23 +587,21 @@ def build_loaders(args):
         train_ds = ISTS_EHR_Dataset(args, dynamics_df, outcome_df, ts_cols, train_ids)
         valid_ds = ISTS_EHR_Dataset(args, dynamics_df, outcome_df, ts_cols, valid_ids)
         test_ds  = ISTS_EHR_Dataset(args, dynamics_df, outcome_df, ts_cols, test_ids)
-        D = train_ds.D
 
         train_loader = torch.utils.data.DataLoader(train_ds, batch_size=args.batch_size,
-                                                shuffle=True, num_workers=0, collate_fn=collate_fn)
+                                                shuffle=True, num_workers=args.num_workers, collate_fn=collate_fn)
         valid_loader = torch.utils.data.DataLoader(valid_ds, batch_size=args.batch_size,
-                                                shuffle=False, num_workers=0, collate_fn=collate_fn)
+                                                shuffle=False, num_workers=args.num_workers, collate_fn=collate_fn)
         test_loader = torch.utils.data.DataLoader(test_ds, batch_size=args.batch_size,
-                                                shuffle=False, num_workers=0, collate_fn=collate_fn)
+                                                shuffle=False, num_workers=args.num_workers, collate_fn=collate_fn)
         
         return train_loader, valid_loader, test_loader
 
     else:
         _, _, test_ids = split_stay_ids_ehr(args, df=outcome_df) # get splited ids
         eval_ds = ISTS_EHR_Dataset(args, dynamics_df, outcome_df, ts_cols, test_ids)
-        D = eval_ds.D
 
         eval_loader = torch.utils.data.DataLoader(test_ds, batch_size=args.batch_size,
-                                                shuffle=False, num_workers=0, collate_fn=collate_fn)
+                                                shuffle=False, num_workers=args.num_workers, collate_fn=collate_fn)
         
         return _, _, eval_loader
