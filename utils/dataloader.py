@@ -27,7 +27,6 @@ class ISTS_EHR_Dataset(Dataset):
         self.args = args
         self.use_ts_trunc = args.use_ts_trunc
         self.max_length = args.max_length # (Option -> 만약 너무 긴 데이터가 들어왔을 때 처리하기 위한 상한선 설정)
-        self.pids = splited_ids
 
         self.task_label = args.task_label
         self.pid_col = args.pid_col
@@ -38,9 +37,12 @@ class ISTS_EHR_Dataset(Dataset):
         self.D = len(self.ts_cols)
 
         # ts_df는 var_name 컬럼 기준이라고 가정(필요하면 full_var_name로 바꿔도 됨)
-        self.ts_df = df[(df[self.args.var_col].isin(self.ts_cols)) & (df[self.pid_col].isin(self.pids))].copy()
+        self.ts_df = df[(df[self.args.var_col].isin(self.ts_cols)) & (df[self.pid_col].isin(splited_ids))].copy()
+        valid_pids = set(self.ts_df[self.pid_col].unique().tolist())
+        self.pids = [pid for pid in splited_ids if pid in valid_pids]
+
         self.ts_df = self.ts_df.sort_values([self.pid_col, self.args.var_col, self.offset])
-        self.empty_group = self.ts_df.iloc[0:0].copy()  # same columns, for empty groups
+        # self.empty_group = self.ts_df.iloc[0:0].copy()  # same columns, for empty groups
 
         outcomes = outcome_df[[self.pid_col, self.task_label]].sort_values(self.pid_col)
         outcomes = outcomes[outcomes[self.pid_col].isin(self.pids)]
@@ -54,8 +56,8 @@ class ISTS_EHR_Dataset(Dataset):
     def __getitem__(self, index):
         pid = self.pids[index]
         y = int(self.pid2y[pid])
-
-        group = self.pid2ts.get(pid, self.empty_group) # if [pid] patient have no observations, it returns empty dataframe
+        group = self.pid2ts[pid]
+        # group = self.pid2ts.get(pid, self.empty_group) # if [pid] patient have no observations, it returns empty dataframe
 
         vars_list = []
 

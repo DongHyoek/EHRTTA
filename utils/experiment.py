@@ -48,7 +48,6 @@ def train(args, trn_loader, val_loader):
         _, x, mask, _, _, _ = batch
         x, mask = x.to(device), mask.to(device)
         scaler.update_source(x, mask)
-        break
 
     source_state = scaler.finalize_source()
     print("Source mean/std ready", source_state["mean"].shape, source_state["std"].shape)
