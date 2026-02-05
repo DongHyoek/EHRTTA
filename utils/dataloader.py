@@ -13,6 +13,7 @@ from pathlib import Path
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.model_selection import train_test_split
 from torch.utils.data import Dataset, WeightedRandomSampler, DataLoader
+from transformers import AutoTokenizer
 from typing import *
 
 # 시계열 데이터 위한 mask 텐서 및 실제 관측된 값들만 기록되어 있는 텐서, text로 변환된 데이터,
@@ -38,8 +39,10 @@ class ISTS_EHR_Dataset(Dataset):
 
         # ts_df는 var_name 컬럼 기준이라고 가정(필요하면 full_var_name로 바꿔도 됨)
         self.ts_df = df[(df[self.args.var_col].isin(self.ts_cols)) & (df[self.pid_col].isin(splited_ids))].copy()
-        valid_pids = set(self.ts_df[self.pid_col].unique().tolist())
+        valid_pids = self.ts_df[self.pid_col].unique().tolist()
         self.pids = [pid for pid in splited_ids if pid in valid_pids]
+
+        print(f'The number of deleted patients {len(splited_ids) - len(valid_pids)}')
 
         self.ts_df = self.ts_df.sort_values([self.pid_col, self.args.var_col, self.offset])
         # self.empty_group = self.ts_df.iloc[0:0].copy()  # same columns, for empty groups
@@ -474,8 +477,12 @@ class MappingData:
         return mapping_df, [full_name_dict[i] for i in self.lab_cols], [full_name_dict[i] for i in self.output_cols]
 
 
-def make_collate_ists_with_text(D, text_bundle : TextBundle):
-
+def make_collate_ists_with_text(args, D, text_bundle : TextBundle):
+    tokenizer = AutoTokenizer.from_pretrained(args.model_id, use_fast=True)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.padding_side = "right"
+    
     def collate(batch):
         B = len(batch)
         pids = [sample["pid"] for sample in batch]
@@ -509,7 +516,11 @@ def make_collate_ists_with_text(D, text_bundle : TextBundle):
         # ---- Text (pid와 매칭) ----
         texts = [text_bundle.get_markdown(pid) for pid in pids]
 
-        return tt, xx, mask, texts, y, pids
+        # ---- Tokenizing ----
+        text_enc = tokenizer(texts, padding=args.text_pad_type, return_tensors='pt')
+        input_ids, text_mask = text_enc["input_ids"], text_enc['attention_mask']
+
+        return tt, xx, mask, input_ids, text_mask, y, pids
     
     return collate
 
@@ -539,7 +550,7 @@ def split_stay_ids_ehr(args, df):
         random_state=args.seed
     )
 
-    print(f"Train size: {len(train_ids)}, Valid size: {len(valid_ids)}, Test size: {len(test_ids)}")
+    # print(f"Train size: {len(train_ids)}, Valid size: {len(valid_ids)}, Test size: {len(test_ids)}")
     
     return train_ids, valid_ids, test_ids
 
@@ -580,7 +591,7 @@ def build_loaders(args):
                              output_var_names=output_var_names)
 
     # 4) When using DataLoader it gets text, ts modalities
-    collate_fn = make_collate_ists_with_text(len(ts_cols), text_bundle)
+    collate_fn = make_collate_ists_with_text(args, len(ts_cols), text_bundle)
     
     # 5) Generate Timeseries Data and Final Loader
     if not args.adapt_mode:

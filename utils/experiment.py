@@ -27,11 +27,6 @@ def train(args, trn_loader, val_loader):
 
     ts_embedder = DataEmbedding_ITS_Pooled(d_model=model.hidden_size, n_var = args.n_time_cols, device=device, 
                                            dropout=args.te_dropout, use_time=True).to(device)
-    
-    tokenizer = AutoTokenizer.from_pretrained(args.model_id, use_fast=True)
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-    tokenizer.padding_side = "right"
 
     aligner = ModalityAlignment(d_model=model.hidden_size, n_heads=args.align_n_heads, 
                                 dropout=args.align_dropout, use_gating=args.use_align_gate).to(device)
@@ -45,9 +40,10 @@ def train(args, trn_loader, val_loader):
     scaler.reset_source_accum()
     
     for i, batch in enumerate(tqdm(trn_loader, desc='Initialize for the normalization')):
-        _, x, mask, _, _, _ = batch
+        _, x, mask, _, _, _, _ = batch
         x, mask = x.to(device), mask.to(device)
         scaler.update_source(x, mask)
+
 
     source_state = scaler.finalize_source()
     print("Source mean/std ready", source_state["mean"].shape, source_state["std"].shape)
@@ -66,17 +62,14 @@ def train(args, trn_loader, val_loader):
 
         for i, batch in enumerate(tqdm(trn_loader, desc='Source Training', total=len(trn_loader))):
             
-
-            tt, x, ts_mask, texts, y, pids = batch
-            tt, x, ts_mask, y = tt.to(device), x.to(device), ts_mask.to(device), y.to(device)
+            tt, x, ts_mask, input_ids, text_mask, y, pids = batch
+            tt, x, ts_mask, input_ids, text_mask, y = tt.to(device), x.to(device), ts_mask.to(device), input_ids.to(device), text_mask.to(device), y.to(device)
 
             # 1) Time series Embedding 
             scaled_x = scaler.transform_source(x, ts_mask)    # 1-1) Time series Scaling
             ts_embedding = ts_embedder(tt, scaled_x, ts_mask) # 1-2) Time series Embedding -> (B,D,d_model)
             
-            # 2) Tokenizing text data  
-            text_enc = tokenizer(texts, padding=args.text_pad_type, return_tensors='pt')
-            input_ids, text_mask = text_enc["input_ids"].to(device), text_enc["attention_mask"].to(device)
+            # 2) Convert text token id to text embedding vectors    
             text_embedding = model.backbone.get_input_embeddings()(input_ids) # (B, longest token length, d_model)
 
             # 3) Cross modality aligning
@@ -105,16 +98,14 @@ def train(args, trn_loader, val_loader):
 
             for i, batch in enumerate(tqdm(val_loader, desc='Source Validation', total=len(val_loader))):
                 
-                tt, x, ts_mask, texts, y, pids = batch
-                tt, x, ts_mask, texts, y, pids = tt.to(device), x.to(device), ts_mask.to(device), texts.to(device), y.to(device), pids.to(device)
+                tt, x, ts_mask, input_ids, text_mask, y, pids = batch
+                tt, x, ts_mask, input_ids, text_mask, y = tt.to(device), x.to(device), ts_mask.to(device), input_ids.to(device), text_mask.to(device), y.to(device)
 
                 # 1) Time series Embedding 
                 scaled_x = scaler.transform_source(x, ts_mask)    # 1-1) Time series Scaling
                 ts_embedding = ts_embedder(tt, scaled_x, ts_mask) # 1-2) Time series Embedding -> (B,D,d_model)
                 
                 # 2) Tokenizing text data  
-                text_enc = tokenizer(texts, padding=args.text_pad_type, return_tensors='pt')
-                input_ids, text_mask = text_enc["input_ids"].to(device), text_enc["attention_mask"].to(device)
                 text_embedding = model.get_input_embeddings()(input_ids) # (B, longest token length, d_model)
 
                 # 3) Cross modality aligning
