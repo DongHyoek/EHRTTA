@@ -566,9 +566,15 @@ def split_stay_ids_ehr(args, df):
 
 def build_loaders(args):
     # 1) load data files
-    dynamics_df = pd.read_csv(Path(args.data_path)/args.data_source/'dynamics_df.csv.gz', compression='gzip')
-    static_df   = pd.read_csv(Path(args.data_path)/args.data_source/'static_df.csv.gz',   compression='gzip')
-    outcome_df  = pd.read_csv(Path(args.data_path)/args.data_source/'outcome_df.csv.gz',  compression='gzip')
+    if args.adapt_mode:
+        dynamics_df = pd.read_csv(Path(args.data_path)/args.data_target/'dynamics_df.csv.gz', compression='gzip')
+        static_df   = pd.read_csv(Path(args.data_path)/args.data_target/'static_df.csv.gz',   compression='gzip')
+        outcome_df  = pd.read_csv(Path(args.data_path)/args.data_target/'outcome_df.csv.gz',  compression='gzip')
+    else:
+        dynamics_df = pd.read_csv(Path(args.data_path)/args.data_source/'dynamics_df.csv.gz', compression='gzip')
+        static_df   = pd.read_csv(Path(args.data_path)/args.data_source/'static_df.csv.gz',   compression='gzip')
+        outcome_df  = pd.read_csv(Path(args.data_path)/args.data_source/'outcome_df.csv.gz',  compression='gzip')
+    
     
     with open(args.var_info_path, 'r') as f:
             metadata = json.load(f)

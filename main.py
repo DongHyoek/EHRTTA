@@ -57,8 +57,6 @@ def build_parser():
                         help='define the method for collect mean/std values', choices = ["aggregate", "distribution"])
     parser.add_argument('--selectmode', type=str, default='mean_of_dist',
                         help='define the method for using distribution of statistics')
-    parser.add_argument('--use_tta', default=True, action='store_true',
-                        help='select using tta or not')
 
     # experiment parameters 
     parser.add_argument('--cuda', default=False , action='store_true',
@@ -183,8 +181,8 @@ if __name__ == "__main__":
         trn_loader, val_loader, tnt_loader = build_loaders(args)
 
         # train & test
-        train_result = train(args, trn_loader, val_loader, ckpt_dir)
-        test_result = inference(args, tnt_loader, ckpt_dir)
+        train_result, scaler = train(args, trn_loader, val_loader, ckpt_dir) # training function returns scaler
+        test_result = inference(args, scaler, tnt_loader, ckpt_dir)
 
         # result save 
         save_metrics(args, train_result, metrics_dir, 'train_val')
@@ -193,9 +191,11 @@ if __name__ == "__main__":
     # Evaluation mode (Test-time adaptation)
     else:
         # build dataset
-        _, _, eval_loader = build_loaders(args)
+        _, _, target_loader = build_loaders(args)
 
-        adaptation_result = adaptation(args, eval_loader, ckpt_dir)
+        ## ※ 학습 끝난 이후에 source model statistics들을 가져오거나 미리 저장해두어야 함.  
+
+        adaptation_result = adaptation(args, target_loader, ckpt_dir)
 
         # result save 
         save_metrics(args, adaptation_result, metrics_dir, 'adaptation')

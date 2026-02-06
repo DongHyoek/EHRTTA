@@ -42,7 +42,7 @@ class PEFTTSLLM(nn.Module):
         
         self.backbone = get_peft_model(backbone, peft_args)
 
-        if args.use_tta:
+        if args.adapt_mode:
             self.backbone_w_tta = PEFTAdaINPatcher(self.backbone, adapter_name="default")
 
         self.hidden_size = self.hf_config.hidden_size
@@ -72,14 +72,15 @@ class PEFTTSLLM(nn.Module):
         else:
             raise ValueError("pooling must be 'last' or 'mean'")
 
-    def forward(self, inputs_embeds: Optional[torch.Tensor] = None, attention_mask: Optional[torch.Tensor] = None, labels: Optional[torch.Tensor] = None) -> Dict[str, Any]:
+    def forward(self, inputs_embeds: Optional[torch.Tensor] = None, labels: Optional[torch.Tensor] = None, attention_mask: Optional[torch.Tensor] = None) -> Dict[str, Any]:
         """
         inputs_embeds(이미 임베딩된 벡터 = aligned)를 input으로 넣어줌.
         transformers AutoModel은 inputs_embeds를 지원함. :contentReference[oaicite:4]{index=4}
         """
 
-        if labels is not None: # source train mode
+        if not self.args.adapt_mode: # source train mode
             outputs = self.backbone(inputs_embeds=inputs_embeds, attention_mask=attention_mask, return_dict=True)
+
         else: # target adaptation mode
             outputs = self.backbone_w_tta(inputs_embeds=inputs_embeds, attention_mask=attention_mask, return_dict=True)
             
