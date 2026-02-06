@@ -478,6 +478,16 @@ class MappingData:
 
 
 def make_collate_ists_with_text(args, D, text_bundle : TextBundle):
+    """
+        #     print(tt.shape)   # (B,D,L)
+        #     print(xx.shape)   # (B,D,L)
+        #     print(mask.shape) # (B,D,L)
+        #     print(len(texts)) # (B), list
+        #     print(input_ids.shape) # (B, T_t, d_model)
+        #     print(text_mask.shape) # (B, T_t)
+        #     print(y.shape)    # (B), tensor
+        #     print(len(pids))  # (B), list
+    """
     tokenizer = AutoTokenizer.from_pretrained(args.model_id, use_fast=True)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token

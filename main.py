@@ -2,6 +2,7 @@ import os
 import torch
 import random
 import numpy as np
+import pandas as pd
 import argparse
 
 from tqdm import tqdm
@@ -31,7 +32,6 @@ def build_parser():
     parser.add_argument('--use_align_gate', default=False, action='store_true',
                         help='use gate mechanism in crossattention')
 
-    
     # LLM model details
     parser.add_argument('--model_id', type=str, default='meta-llama/Llama-3.1-8B',
                         help='define the llm model type to use')
@@ -71,8 +71,10 @@ def build_parser():
                         help='frequency of checking the loss, in minibatches')
     parser.add_argument('--log_dir', type=str, default='logs/',
                         help='the directory where the logs will be saved')
-    parser.add_argument('--ckpt_dir', type=str, default='results/checkpoint',
+    parser.add_argument('--ckpt_dir', type=str, default='./results/checkpoint',
                         help='the directory where the best model checkpoint will be saved')
+    parser.add_argument('--metrics_dir', type=str, default='./results/metrics',
+                        help='the directory where the metric for the test set will be saved')
     parser.add_argument('--calc_test_accuracy', default=False , action='store_true',
                         help='Calculate test accuracy along with val accuracy')
     
@@ -103,6 +105,8 @@ def build_parser():
                         help='path where variable information is located')
     parser.add_argument('--data_source', type=str, default='miiv',
                         help='the source of the data')
+    parser.add_argument('--data_target', type=str, default='miiv',
+                        help='the target of the data')
     parser.add_argument('--task', type=str, default='classification', 
                         help='task for training classification or regression')
     parser.add_argument('--task_label', type=str, default='mortality_inunit',
@@ -133,20 +137,10 @@ def build_parser():
                         help="Number of workers preprocessing the data.")
     parser.add_argument('--n_time_cols', type=int, default=7,
                         help='the number of time series columns')
-    
-    parser.add_argument('--iterations', type=int, default=5000,
-                        help='number of classes in every batch')
-    parser.add_argument("-order", "--class_order", default="old", type=str,
-                        help="define classes order of increment ",
-                        choices = ["random", "chrono", "old", "super"])
-    parser.add_argument("-inc", "--increment", default=5, type=int,
-                        help="number of classes to increment by in class incremental loader")
-    parser.add_argument('--test_batch_size', type=int, default=100000,
-                        help='batch size to use during testing.')
 
     return parser
 
-def fix_seed(seed: int = 42):
+def fix_seed(seed: int = 0):
     random.seed(seed) # random
     np.random.seed(seed) # numpy
     os.environ["PYTHONHASHSEED"] = str(seed) # os
@@ -156,6 +150,13 @@ def fix_seed(seed: int = 42):
     torch.cuda.manual_seed(seed) 
     torch.backends.cudnn.deterministic = True 
     torch.backends.cudnn.benchmark = False 
+
+def save_metrics(args, results, save_dir, type='train_val'):
+    df = pd.DataFrame(results)
+    df['exp_type'] = type
+    df['backbone'] = args.model_id
+
+    df.to_csv(f'{save_dir}/metrics_result.csv', index = False)
 
 if __name__ == "__main__":
 
@@ -168,30 +169,33 @@ if __name__ == "__main__":
     print('Build Dataloaders..')
     
     # Set save dir 
-    save_dir = f'{args.ckpt_dir}/{args.task}/{args.task_label}'
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
+    ckpt_dir = f'{args.ckpt_dir}/{args.data_source}/{args.task}_{args.task_label}'
+    if not os.path.exists(ckpt_dir):
+        os.makedirs(ckpt_dir)
+    
+    metrics_dir = f'{args.metrics_dir}/{args.data_source}/{args.task}_{args.task_label}/{args.data_target}'
+    if not os.path.exists(metrics_dir):
+        os.makedirs(metrics_dir)
 
     # Train mode
     if not args.adapt_mode:
         # build dataset
         trn_loader, val_loader, tnt_loader = build_loaders(args)
-        
-        #     tt, xx, mask, texts, y, pids = batch
-        #     print(tt.shape)   # (B,D,L)
-        #     print(xx.shape)   # (B,D,L)
-        #     print(mask.shape) # (B,D,L)
-        #     print(len(texts)) # (B), list
-        #     print(y.shape)    # (B), tensor
-        #     print(len(pids))  # (B), list
 
+        # train & test
+        train_result = train(args, trn_loader, val_loader, ckpt_dir)
+        test_result = inference(args, tnt_loader, ckpt_dir)
 
-        train_result = train(args, trn_loader, val_loader, save_dir)
-        test_result = inference(args, tnt_loader, save_dir)
+        # result save 
+        save_metrics(args, train_result, metrics_dir, 'train_val')
+        save_metrics(args, test_result, metrics_dir, 'test')
 
     # Evaluation mode (Test-time adaptation)
     else:
         # build dataset
         _, _, eval_loader = build_loaders(args)
 
-        adaptation_result = adaptation(args, eval_loader, save_dir)
+        adaptation_result = adaptation(args, eval_loader, ckpt_dir)
+
+        # result save 
+        save_metrics(args, adaptation_result, metrics_dir, 'adaptation')
