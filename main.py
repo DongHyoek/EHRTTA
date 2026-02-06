@@ -60,7 +60,7 @@ def build_parser():
     parser.add_argument('--use_tta', default=True, action='store_true',
                         help='select using tta or not')
 
-    # experiment parameters 1
+    # experiment parameters 
     parser.add_argument('--cuda', default=False , action='store_true',
                         help='Use GPU')
     parser.add_argument('--seed', type=int, default=0,
@@ -87,6 +87,10 @@ def build_parser():
                         help='batch size for dataloader')
     parser.add_argument('--scheduler', default=False , action='store_true',
                         help='use scheduler for training')
+    parser.add_argument('--early_stop', default=False , action='store_true',
+                        help='using early stopping')
+    parser.add_argument('--patience', type=int, default=10, 
+                        help='patience for early stopping')
     parser.add_argument('--loss_type', type=str, default='crossentropy', 
                         help='objective function for training')
     parser.add_argument('--grad_clip_norm', type=float, default=2.0,
@@ -184,7 +188,7 @@ if __name__ == "__main__":
 
         train_result = train(args, trn_loader, val_loader, save_dir)
         test_result = inference(args, tnt_loader, save_dir)
-        
+
     # Evaluation mode (Test-time adaptation)
     else:
         # build dataset
