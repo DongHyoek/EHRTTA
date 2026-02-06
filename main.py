@@ -184,8 +184,7 @@ if __name__ == "__main__":
 
         train_result = train(args, trn_loader, val_loader, save_dir)
         test_result = inference(args, tnt_loader, save_dir)
-
-
+        
     # Evaluation mode (Test-time adaptation)
     else:
         # build dataset
