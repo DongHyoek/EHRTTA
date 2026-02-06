@@ -67,12 +67,12 @@ def build_parser():
                         help='random seed of model')
     parser.add_argument('--adapt_mode', default=False , action='store_true',
                         help='adaptation_mode')
-    parser.add_argument('--log_every', type=int, default=1000,
-                        help='frequency of checking the validation accuracy, in minibatches')
+    parser.add_argument('--print_iter', type=int, default=100,
+                        help='frequency of checking the loss, in minibatches')
     parser.add_argument('--log_dir', type=str, default='logs/',
                         help='the directory where the logs will be saved')
-    parser.add_argument('--tf_dir', type=str, default='',
-                        help='(not set by user)')
+    parser.add_argument('--ckpt_dir', type=str, default='results/checkpoint',
+                        help='the directory where the best model checkpoint will be saved')
     parser.add_argument('--calc_test_accuracy', default=False , action='store_true',
                         help='Calculate test accuracy along with val accuracy')
     
@@ -162,12 +162,17 @@ if __name__ == "__main__":
     fix_seed(args.seed)
     
     print('Build Dataloaders..')
+    
+    # Set save dir 
+    save_dir = f'{args.ckpt_dir}/{args.task}/{args.task_label}'
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+
     # Train mode
     if not args.adapt_mode:
         # build dataset
         trn_loader, val_loader, tnt_loader = build_loaders(args)
         
-        # for batch in trn_loader:
         #     tt, xx, mask, texts, y, pids = batch
         #     print(tt.shape)   # (B,D,L)
         #     print(xx.shape)   # (B,D,L)
@@ -175,12 +180,10 @@ if __name__ == "__main__":
         #     print(len(texts)) # (B), list
         #     print(y.shape)    # (B), tensor
         #     print(len(pids))  # (B), list
-        #     break 
 
-        # raise 
 
-        train_result = train(args, trn_loader, val_loader)
-        # test_result = inference(args, tnt_loader)
+        train_result = train(args, trn_loader, val_loader, save_dir)
+        test_result = inference(args, tnt_loader, save_dir)
 
 
     # Evaluation mode (Test-time adaptation)
@@ -188,4 +191,4 @@ if __name__ == "__main__":
         # build dataset
         _, _, eval_loader = build_loaders(args)
 
-        adaptation_result = adaptation(args, eval_loader)
+        adaptation_result = adaptation(args, eval_loader, save_dir)
