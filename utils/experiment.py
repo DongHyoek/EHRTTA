@@ -62,7 +62,6 @@ def train(args, trn_loader, val_loader, ckpt_dir):
         _, x, mask, _, _, _, _ = batch
         x, mask = x.to(device), mask.to(device)
         scaler.update_source(x, mask)
-        break
 
     source_state = scaler.finalize_source()
     
@@ -130,8 +129,6 @@ def train(args, trn_loader, val_loader, ckpt_dir):
             torch.save(cross_attn_weights.detach().cpu(), f'{ckpt_dir}/attn_weights_train_{i:04d}.pt')
             torch.save(torch.tensor(pids), f'{ckpt_dir}/pids_train_{i:04d}.pt')
 
-            break
-
         # Evaluation 
         train_loss = running_trn_loss / len(trn_loader)
         train_metrics = evaluator.compute()
@@ -171,8 +168,6 @@ def train(args, trn_loader, val_loader, ckpt_dir):
 
                 torch.save(cross_attn_weights.detach().cpu(), f'{ckpt_dir}/attn_weights_valid_{i:03d}.pt')
                 torch.save(torch.tensor(pids), f'{ckpt_dir}/pids_valid_{i:03d}.pt')
-
-                break
 
             valid_loss = running_val_loss / len(val_loader)
             valid_metrics = evaluator.compute()
