@@ -183,7 +183,7 @@ if __name__ == "__main__":
         # train & test
         train_result, scaler = train(args, trn_loader, val_loader, ckpt_dir) # training function returns scaler
         test_result = inference(args, scaler, tnt_loader, ckpt_dir)
-
+    
         # result save 
         save_metrics(args, train_result, metrics_dir, 'train_val')
         save_metrics(args, test_result, metrics_dir, 'test')

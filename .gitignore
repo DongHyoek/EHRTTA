@@ -1,3 +1,5 @@
 data/
 models/*.ipynb
 **/__pycache__/
+wandb/
+results/

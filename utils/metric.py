@@ -19,8 +19,10 @@ class MetricManager:
             self.prec = evaluate.load("precision")
             self.rec = evaluate.load("recall")
             self.auroc = evaluate.load("roc_auc")
-            self.auprc = evaluate.load("average_precision")
             self.cm = evaluate.load("confusion_matrix")
+            # AUPRC 직접 계산용 버퍼
+            self._all_pos_scores = []
+            self._all_labels = []
 
         elif args.task == "regression":
             self.mse = evaluate.load("mse")
@@ -33,11 +35,20 @@ class MetricManager:
 
     def reset(self):
         if self.args.task == "classification":
-            for metric in [self.acc, self.f1, self.prec, self.rec, self.auroc, self.auprc, self.cm]:
-                metric.reset()
-        else:
-            for metric in [self.mse, self.mae]:
-                metric.reset()
+            self.acc = evaluate.load("accuracy")
+            self.f1 = evaluate.load("f1")
+            self.prec = evaluate.load("precision")
+            self.rec = evaluate.load("recall")
+            self.auroc = evaluate.load("roc_auc")
+            self.cm = evaluate.load("confusion_matrix")
+            # AUPRC 직접 계산용 버퍼
+            self._all_pos_scores = []
+            self._all_labels = []
+
+        elif self.args.task == "regression":
+            self.mse = evaluate.load("mse")
+            self.mae = evaluate.load("mae")
+            # MAPE는 evaluate에 없거나 환경에 따라 다를 수 있어 직접 구현(안전)
             self._mape_sum = 0.0
             self._mape_count = 0
 
@@ -62,7 +73,9 @@ class MetricManager:
 
         # score-based (binary)
         self.auroc.add_batch(prediction_scores=pos_scores, references=labels)
-        self.auprc.add_batch(prediction_scores=pos_scores, references=labels)
+        # AUPRC용 누적
+        self._all_pos_scores.append(pos_scores)
+        self._all_labels.append(labels)
 
         # confusion matrix
         # evaluate의 confusion_matrix는 label 리스트가 있으면 더 안전
@@ -86,6 +99,32 @@ class MetricManager:
         self._mape_sum += float(mape_batch.sum().item())
         self._mape_count += int(mape_batch.numel())
 
+    def _average_precision_binary(self, scores: torch.Tensor, labels: torch.Tensor) -> float:
+        """
+        scores: (N,) probability or score for positive class
+        labels: (N,) in {0,1}
+        """
+        scores = scores.float()
+        labels = labels.long()
+
+        # positives count
+        P = int(labels.sum().item())
+        if P == 0:
+            return float("nan")  # or 0.0 (원하는 정의에 맞게)
+        
+        # sort by score descending
+        idx = torch.argsort(scores, descending=True)
+        y = labels[idx]
+
+        # precision@k
+        tp = torch.cumsum(y, dim=0)
+        k = torch.arange(1, y.numel() + 1, device=y.device)
+        precision_at_k = tp / k
+
+        # AP = mean precision at each true positive
+        ap = (precision_at_k * y).sum().item() / P
+        return float(ap)
+
     def compute(self):
         if self.args.task == "classification":
             # average 옵션 반영 (binary/macro 등)
@@ -93,13 +132,18 @@ class MetricManager:
             precision = self.prec.compute(average='macro')["precision"]
             recall = self.rec.compute(average='macro')["recall"]
 
+            scores = torch.cat(self._all_pos_scores, dim=0) if len(self._all_pos_scores) else torch.tensor([])
+            labels = torch.cat(self._all_labels, dim=0) if len(self._all_labels) else torch.tensor([])
+            
+            auprc = self._average_precision_binary(scores, labels) if scores.numel() else float("nan")
+
             out = {
                 "accuracy": self.acc.compute()["accuracy"],
                 "f1": f1,
                 "precision": precision,
                 "recall": recall,
                 "auroc": self.auroc.compute()["roc_auc"],
-                "auprc": self.auprc.compute()["average_precision"],
+                "auprc": auprc,
                 "confusion_matrix": self.cm.compute()["confusion_matrix"],
             }
             return out

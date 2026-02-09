@@ -14,7 +14,7 @@ from models.embed import DataEmbedding_ITS_Pooled
 from models.llm import PEFTTSLLM
 from models.tta import PEFTAdaINPatcher
 from utils.norm import TSScaler
-from metric import MetricManager
+from utils.metric import MetricManager
 
 def train(args, trn_loader, val_loader, ckpt_dir):
 
@@ -62,13 +62,14 @@ def train(args, trn_loader, val_loader, ckpt_dir):
         _, x, mask, _, _, _, _ = batch
         x, mask = x.to(device), mask.to(device)
         scaler.update_source(x, mask)
+        break
 
     source_state = scaler.finalize_source()
     
     evaluator = MetricManager(args)
 
-    print(f"Source Mean : Shape {source_state["mean"].shape} / Values{source_state["mean"]}")
-    print(f"Source Std : Shape {source_state["std"].shape} / Values{source_state["std"]}")
+    print(f'Source Mean : Shape {source_state["mean"].shape} / Values{source_state["mean"]}')
+    print(f'Source Std : Shape {source_state["std"].shape} / Values{source_state["std"]}')
 
     # Training
     print('Training Start..')
@@ -84,6 +85,7 @@ def train(args, trn_loader, val_loader, ckpt_dir):
         model.train()
         aligner.train()
         ts_embedder.train()
+
         for i, batch in enumerate(tqdm(trn_loader, desc='Source Training', total=len(trn_loader))):
             
             tt, x, ts_mask, input_ids, text_mask, y, pids = batch
@@ -123,15 +125,19 @@ def train(args, trn_loader, val_loader, ckpt_dir):
                 evaluator.update_regression(logits, gt)
         
             if i % args.print_iter == 0 and i != 0:
-                accelerator.print(f'[Epoch : {epoch},  Iter : {(i + 1):.3f} / {len(trn_loader):.3f}] Running Loss {running_trn_loss / (i + 1):.3f}')
+                accelerator.print(f'[Epoch : {epoch},  Iter : {(i + 1):03d} / {len(trn_loader):03d}] Running Loss {running_trn_loss / (i + 1):.3f}')
+
+            torch.save(cross_attn_weights.detach().cpu(), f'{ckpt_dir}/attn_weights_train_{i:04d}.pt')
+            torch.save(torch.tensor(pids), f'{ckpt_dir}/pids_train_{i:04d}.pt')
+
+            break
 
         # Evaluation 
         train_loss = running_trn_loss / len(trn_loader)
         train_metrics = evaluator.compute()
 
-        evaluator.reset() # reset for valiadation
-
         with torch.no_grad():
+            evaluator.reset() # reset for valiadation
             model.eval()
             aligner.eval()
             ts_embedder.eval()
@@ -146,7 +152,7 @@ def train(args, trn_loader, val_loader, ckpt_dir):
                 ts_embedding = ts_embedder(tt, scaled_x, ts_mask) # 1-2) Time series Embedding -> (B,D,d_model)
                 
                 # 2) Tokenizing text data  
-                text_embedding = model.get_input_embeddings()(input_ids) # (B, longest token length, d_model)
+                text_embedding = model.backbone.get_input_embeddings()(input_ids) # (B, longest token length, d_model)
 
                 # 3) Cross modality aligning
                 aligned_embedding, cross_attn_weights = aligner(ts_embedding, text_embedding, text_mask, args.align_return_weights) # (B, D, d_model)
@@ -163,11 +169,16 @@ def train(args, trn_loader, val_loader, ckpt_dir):
                 else:
                     evaluator.update_regression(logits, gt)
 
+                torch.save(cross_attn_weights.detach().cpu(), f'{ckpt_dir}/attn_weights_valid_{i:03d}.pt')
+                torch.save(torch.tensor(pids), f'{ckpt_dir}/pids_valid_{i:03d}.pt')
+
+                break
+
             valid_loss = running_val_loss / len(val_loader)
             valid_metrics = evaluator.compute()
         
         # Logging 
-        print(f"====[Epoch {epoch+1}/{args.epochs} ] | Avg. Train Loss: {train_loss:.3f} | Avg. Valid Loss: {valid_loss:.3f}====")
+        print(f"====[Epoch {epoch}/{args.n_epochs} ] | Avg. Train Loss: {train_loss:.3f} | Avg. Valid Loss: {valid_loss:.3f}====")
         
         print(f"== Training Results == ")
         accelerator.print({'epoch' : epoch, **train_metrics})
@@ -214,7 +225,7 @@ def train(args, trn_loader, val_loader, ckpt_dir):
             accelerator.log(result, step=global_step)
 
         if best_val_loss > valid_loss:
-            print(f'====[Epoch {epoch+1}/{args.epochs}] | Best Valid Loss update {best_val_loss:.3f} ==> {valid_loss:3f} ====')
+            print(f'====[Epoch {epoch}/{args.n_epochs}] | Best Valid Loss update {best_val_loss:.3f} ==> {valid_loss:3f} ====')
             best_val_loss = valid_loss
             model.backbone.save_pretrained(ckpt_dir)
 
@@ -229,7 +240,6 @@ def train(args, trn_loader, val_loader, ckpt_dir):
 
     accelerator.end_training()
     print(f'==========[Finish]==========')
-
     return result, scaler
 
 def inference(args, scaler, data_loader, ckpt_dir):
@@ -276,7 +286,7 @@ def inference(args, scaler, data_loader, ckpt_dir):
             ts_embedding = ts_embedder(tt, scaled_x, ts_mask) # 1-2) Time series Embedding -> (B,D,d_model)
             
             # 2) Tokenizing text data  
-            text_embedding = model.get_input_embeddings()(input_ids) # (B, longest token length, d_model)
+            text_embedding = model.backbone.get_input_embeddings()(input_ids) # (B, longest token length, d_model)
 
             # 3) Cross modality aligning
             aligned_embedding, cross_attn_weights = aligner(ts_embedding, text_embedding, text_mask, args.align_return_weights) # (B, D, d_model)
@@ -368,7 +378,7 @@ def adaptation(args, data_loader, ckpt_dir):
             ts_embedding = ts_embedder(tt, scaled_x, ts_mask) # 1-2) Time series Embedding -> (B,D,d_model)
             
             # 2) Tokenizing text data  
-            text_embedding = model.get_input_embeddings()(input_ids) # (B, longest token length, d_model)
+            text_embedding = model.backbone.get_input_embeddings()(input_ids) # (B, longest token length, d_model)
 
             # 3) Cross modality aligning
             aligned_embedding, cross_attn_weights = aligner(ts_embedding, text_embedding, text_mask, args.align_return_weights) # (B, D, d_model)
