@@ -74,30 +74,34 @@ class CrossAttnBlock(nn.Module):
           text:(B, N, d)
           text_key_padding_mask: (B, N) bool, True for positions to mask (padding)
         Returns:
-          ts_out: (B, M, d)
+          ts_out: (B, M, d) / it changes to out : (B, N, d) 
           attn_weights: (B, M, N) if need_weights else None
         """
-        q = self.ln_q(ts)
-        kv = self.ln_kv(text)
+        q = self.ln_q(ts) # layer noramlization
+        kv = self.ln_kv(text) # layer normalization
 
         # Cross-attn: Q from ts, K/V from text
         attn_out, attn_w = self.attn( query=q, key=kv, value=kv, key_padding_mask=text_key_padding_mask)  # masks K/V side need_weights=need_weights, average_attn_weights=False if need_weights else True,  # keep per-head if need_weights=False doesn't matter
         attn_out = self.attn_drop(attn_out)
 
-        if self.use_gating:
-            ts = ts + self.gate * attn_out
-        else:
-            ts = ts + attn_out
 
-        # FFN
-        ts = ts + self.ffn(self.ln_ffn(ts))
+        # if self.use_gating:
+        #     ts = ts + self.gate * attn_out
+        # else:
+        #     ts = ts + attn_out
+
+        # # FFN
+        # ts = ts + self.ffn(self.ln_ffn(ts))
+        out = self.ffn(self.ln_ffn(attn_out))
 
         # If need_weights and average_attn_weights=False, attn_w is (B, num_heads, M, N).
         # You can average over heads here if you prefer.
         if need_weights and attn_w is not None and attn_w.dim() == 4:
             attn_w = attn_w.mean(dim=1)  # -> (B, M, N)
 
-        return ts, attn_w if need_weights else None
+        # return ts, attn_w if need_weights else None
+
+        return out, attn_w if need_weights else None
 
 
 class ModalityAlignment(nn.Module):

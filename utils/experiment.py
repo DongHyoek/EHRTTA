@@ -101,7 +101,7 @@ def train(args, trn_loader, val_loader, ckpt_dir):
             aligned_embedding, cross_attn_weights = aligner(ts_embedding, text_embedding, text_mask, args.align_return_weights) # (B, D, d_model)
 
             # 4) input the aligned embedding vector
-            outputs = model(inputs_embeds=aligned_embedding, labels=y) # Dict(loss, logits, pooled : [(B, d_model)])
+            outputs = model(inputs_embeds=aligned_embedding, attention_mask=text_mask, labels=y) # Dict(loss, logits, pooled : [(B, d_model)])
             
             loss = outputs['loss']
 
@@ -155,7 +155,7 @@ def train(args, trn_loader, val_loader, ckpt_dir):
                 aligned_embedding, cross_attn_weights = aligner(ts_embedding, text_embedding, text_mask, args.align_return_weights) # (B, D, d_model)
 
                 # 4) input the aligned embedding vector
-                outputs = model(inputs_embeds=aligned_embedding, labels=y) # Dict(loss, logits, pooled : [(B, d_model)])
+                outputs = model(inputs_embeds=aligned_embedding, attention_mask=text_mask, labels=y) # Dict(loss, logits, pooled : [(B, d_model)])
                 
                 running_val_loss  += outputs['loss'].item()
                 
@@ -287,7 +287,7 @@ def inference(args, scaler, data_loader, ckpt_dir):
             aligned_embedding, cross_attn_weights = aligner(ts_embedding, text_embedding, text_mask, args.align_return_weights) # (B, D, d_model)
 
             # 4) input the aligned embedding vector
-            outputs = model(inputs_embeds=aligned_embedding, labels=y) # Dict(loss, logits, pooled : [(B, d_model)])
+            outputs = model(inputs_embeds=aligned_embedding, attention_mask=text_mask, labels=y) # Dict(loss, logits, pooled : [(B, d_model)])
             
             running_infer_loss  += outputs['loss'].item()
             
@@ -379,7 +379,7 @@ def adaptation(args, data_loader, ckpt_dir):
             aligned_embedding, cross_attn_weights = aligner(ts_embedding, text_embedding, text_mask, args.align_return_weights) # (B, D, d_model)
 
             # 4) input the aligned embedding vector
-            outputs = model(inputs_embeds=aligned_embedding, labels=y) # Dict(loss, logits, pooled : [(B, d_model)])
+            outputs = model(inputs_embeds=aligned_embedding, attention_mask=text_mask, labels=y) # Dict(loss, logits, pooled : [(B, d_model)])
             
             running_adapt_loss  += outputs['loss'].item()
             
