@@ -226,7 +226,9 @@ def train(args, trn_loader, val_loader, ckpt_dir, use_load=False):
         if best_val_loss > valid_loss:
             print(f'====[Epoch {epoch}/{args.n_epochs}] | Best Valid Loss update {best_val_loss:.3f} ==> {valid_loss:3f} ====')
             best_val_loss = valid_loss
-            save_ckpt(ckpt_dir, model, ts_embedder, aligner, optimizer, scheduler, epoch, best_val_loss, args)
+            save_ckpt(ckpt_dir, ts_scaler=scaler, model=model, ts_embedder=ts_embedder, aligner=aligner, 
+                      optimizer=optimizer, scheduler=scheduler, epoch=epoch, best_val_loss=best_val_loss, 
+                      args=args)
             
 
         else:
@@ -263,7 +265,8 @@ def inference(args, data_loader, ckpt_dir, use_load=True):
     aligner = ModalityAlignment(d_model=model.hidden_size, n_heads=args.align_n_heads, 
                                 dropout=args.align_dropout, use_gating=args.use_align_gate).to(device)
 
-    load_misc_ckpt(ckpt_dir, model, ts_embedder, aligner, ts_scaler=scaler, device=device)
+    load_misc_ckpt(ckpt_dir=ckpt_dir, model=model, ts_embedder=ts_embedder, aligner=aligner, 
+                   ts_scaler=scaler, device=device)
     
     model, aligner, data_loader  = accelerator.prepare(model, aligner, data_loader)
 
@@ -357,7 +360,7 @@ def adaptation(args, data_loader, ckpt_dir, use_load=True):
     aligner = ModalityAlignment(d_model=model.hidden_size, n_heads=args.align_n_heads, 
                                 dropout=args.align_dropout, use_gating=args.use_align_gate).to(device)
     
-    load_misc_ckpt(ckpt_dir, model, ts_embedder, aligner, device=device)
+    load_misc_ckpt(ckpt_dir=ckpt_dir, model=model, ts_embedder=ts_embedder, aligner=aligner, device=device)
 
     model, aligner, data_loader  = accelerator.prepare(model, aligner, data_loader)
 
@@ -462,9 +465,8 @@ def save_ckpt(ckpt_dir, ts_scaler, model, ts_embedder, aligner, optimizer=None, 
 def load_misc_ckpt(ckpt_dir, model, ts_embedder, aligner, ts_scaler=None, device='cpu',
                    optimizer=None, scheduler=None, strict=True):
     
-    misc = torch.load(f'{ckpt_dir}/best_misc.pt')
+    misc = torch.load(f'{ckpt_dir}/best_misc.pt', map_location='cpu')
 
-    ts_scaler.load_state_dict(misc['ts_scaler_state'], strict=strict, device=device)
     ts_embedder.load_state_dict(misc["ts_embedder_state"], strict=strict)
     aligner.load_state_dict(misc["aligner_state"], strict=strict)
     model.head.load_state_dict(misc["head_state"], strict=strict)
@@ -474,6 +476,9 @@ def load_misc_ckpt(ckpt_dir, model, ts_embedder, aligner, ts_scaler=None, device
 
     if scheduler is not None and "scheduler_state" in misc:
         scheduler.load_state_dict(misc["scheduler_state"])
+    
+    if ts_scaler is not None:
+        ts_scaler.load_state_dict(misc['ts_scaler_state'], strict=strict, device=device)
 
     epoch = misc.get("epoch", None)
     best_val_loss = misc.get("best_val_loss", None)
