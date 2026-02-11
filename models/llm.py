@@ -7,11 +7,15 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from transformers import AutoConfig, AutoModel
-from peft import LoraConfig, get_peft_model, TaskType
+from peft import LoraConfig, get_peft_model, TaskType, PeftModel
 from models.tta import PEFTAdaINPatcher
 
 class PEFTTSLLM(nn.Module):
-    def __init__(self, args, device):
+    def __init__(self, args, device, adapter_dir='./', use_load=False):
+        """
+        use_load : load trained the best adapter yes / no?
+        adapter_dir : the directory of the best model saved
+        """
         super().__init__()
         
         self.args = args
@@ -42,6 +46,10 @@ class PEFTTSLLM(nn.Module):
         
         self.backbone = get_peft_model(backbone, peft_args)
 
+        if use_load: # load best model for inference
+            self.backbone.load_adapter(f"{adapter_dir}/best_adapter", adapter_name="default", is_trainable=False)
+            self.backbone.set_adapter("default")
+
         if args.adapt_mode:
             self.backbone_w_tta = PEFTAdaINPatcher(self.backbone, adapter_name="default")
 
@@ -60,6 +68,7 @@ class PEFTTSLLM(nn.Module):
         if self.args.h_pool == "last":
             if attention_mask is None:
                 return last_hidden_state[:, -1, :]
+            
             # 마지막 유효 토큰 위치로 gather
             lengths = attention_mask.long().sum(dim=1) - 1  # (B,)
             return last_hidden_state[torch.arange(last_hidden_state.size(0), device=last_hidden_state.device), lengths]
@@ -67,6 +76,7 @@ class PEFTTSLLM(nn.Module):
         elif self.args.h_pool == "mean":
             if attention_mask is None:
                 return last_hidden_state.mean(dim=1)
+            
             mask = attention_mask.unsqueeze(-1).to(last_hidden_state.dtype)
             return (last_hidden_state * mask).sum(dim=1) / mask.sum(dim=1).clamp_min(1.0)
         else:

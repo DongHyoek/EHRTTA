@@ -205,3 +205,47 @@ class TSScaler:
         x_scaled = torch.where(mask, x_scaled, torch.zeros_like(x_scaled))
 
         return x_scaled, (self.running_state if self.use_norm_ema else used_state)
+
+    def state_dict(self):
+        def pack_state(st):
+            if st is None:
+                return None
+            return {
+                "mean": st["mean"].detach().cpu(),
+                "std": st["std"].detach().cpu(),
+                "count": st["count"].detach().cpu(),
+            }
+
+        return {
+            "eps": self.eps,
+            "min_std": self.min_std,
+            "use_norm_ema": self.use_norm_ema,
+            "norm_ema_alpha": self.norm_ema_alpha,
+            "source_state": pack_state(self.source_state),
+            "running_state": pack_state(self.running_state),
+        }
+
+    def load_state_dict(self, sd, device=None, dtype=None):
+        self.eps = float(sd.get("eps", self.eps))
+        self.min_std = float(sd.get("min_std", self.min_std))
+        self.use_norm_ema = bool(sd.get("use_norm_ema", self.use_norm_ema))
+        self.norm_ema_alpha = float(sd.get("norm_ema_alpha", self.norm_ema_alpha))
+
+        def unpack_state(st):
+            if st is None:
+                return None
+            mean = st["mean"]
+            std = st["std"]
+            count = st["count"]
+            if device is not None:
+                mean = mean.to(device)
+                std = std.to(device)
+                count = count.to(device)
+            if dtype is not None:
+                mean = mean.to(dtype)
+                std = std.to(dtype)
+                count = count.to(dtype)
+            return {"mean": mean, "std": std, "count": count}
+
+        self.source_state = unpack_state(sd.get("source_state", None))
+        self.running_state = unpack_state(sd.get("running_state", None))

@@ -89,7 +89,7 @@ def build_parser():
                         help='use scheduler for training')
     parser.add_argument('--early_stop', default=False , action='store_true',
                         help='using early stopping')
-    parser.add_argument('--patience', type=int, default=10, 
+    parser.add_argument('--patience', type=int, default=5, 
                         help='patience for early stopping')
     parser.add_argument('--loss_type', type=str, default='crossentropy', 
                         help='objective function for training')
@@ -181,8 +181,8 @@ if __name__ == "__main__":
         trn_loader, val_loader, tnt_loader = build_loaders(args)
 
         # train & test
-        train_result, scaler = train(args, trn_loader, val_loader, ckpt_dir) # training function returns scaler
-        test_result = inference(args, scaler, tnt_loader, ckpt_dir)
+        train_result = train(args, trn_loader, val_loader, ckpt_dir, use_load=False) # training function returns scaler
+        test_result = inference(args, tnt_loader, ckpt_dir, use_load=True)
     
         # result save 
         save_metrics(args, train_result, metrics_dir, 'train_val')
@@ -195,7 +195,7 @@ if __name__ == "__main__":
 
         ## ※ 학습 끝난 이후에 source model statistics들을 가져오거나 미리 저장해두어야 함.  
 
-        adaptation_result = adaptation(args, target_loader, ckpt_dir)
+        adaptation_result = adaptation(args, target_loader, ckpt_dir, use_load=True)
 
         # result save 
         save_metrics(args, adaptation_result, metrics_dir, 'adaptation')

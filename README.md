@@ -11,9 +11,10 @@
 # Embedding 순서 
 1) DataEmbedding_ITS_Ind_VarPrompt로 time series 데이터 serialization하게 만들어서 임베딩
 2) Tokenized Text max_length, Timeseries max_length 설정
+3) 시계열 길이가 너무 적은 거 같긴 함.. 
 
 # Aligning 과정
-- (수정사항) Cross Attention으로 Query(=Time series Embedding)를 바꾸는게 아니라 KV(=Text 값에 입력으로 넣어줘야 함)
+- (수정사항) Cross Attention에서 gate를 아예 사용하지 않고 학습해보기. 
 
 # Impelementation orders
 ```
