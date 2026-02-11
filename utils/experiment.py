@@ -50,7 +50,7 @@ def train(args, trn_loader, val_loader, ckpt_dir, use_load=False):
         num_training_steps = len(trn_loader) * args.n_epochs
         scheduler = get_cosine_schedule_with_warmup(optimizer=optimizer, 
                                                     # num_warmup_steps=int(num_training_steps * 0.03),
-                                                    num_wramup_steps=50, 
+                                                    num_warmup_steps=50, 
                                                     num_training_steps=num_training_steps)
         
         model, aligner, optimizer, scheduler, trn_loader, val_loader  = accelerator.prepare(model, aligner, optimizer, scheduler, trn_loader, val_loader)
