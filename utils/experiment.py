@@ -49,7 +49,8 @@ def train(args, trn_loader, val_loader, ckpt_dir, use_load=False):
     if args.scheduler:
         num_training_steps = len(trn_loader) * args.n_epochs
         scheduler = get_cosine_schedule_with_warmup(optimizer=optimizer, 
-                                                    num_warmup_steps=int(num_training_steps * 0.03), 
+                                                    # num_warmup_steps=int(num_training_steps * 0.03),
+                                                    num_wramup_steps=50, 
                                                     num_training_steps=num_training_steps)
         
         model, aligner, optimizer, scheduler, trn_loader, val_loader  = accelerator.prepare(model, aligner, optimizer, scheduler, trn_loader, val_loader)
@@ -117,7 +118,8 @@ def train(args, trn_loader, val_loader, ckpt_dir, use_load=False):
             optimizer.zero_grad()
             
             running_trn_loss  += loss.item()
-            accelerator.log({"Train/loss": loss.item()}, step=global_step)
+            accelerator.log({"Train/loss": loss.item(),
+                             "Train/learning_rate" : optimizer.param_groups[0]['lr']}, step=global_step)
             global_step += 1
 
             logits, gt = accelerator.gather_for_metrics((outputs['logits'], y))

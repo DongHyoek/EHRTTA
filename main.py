@@ -79,7 +79,7 @@ def build_parser():
     # optimizer parameters influencing all models
     parser.add_argument('--n_epochs', type=int, default=1, 
                         help='number of epochs')
-    parser.add_argument('--lr', type=float, default=1e-3, 
+    parser.add_argument('--lr', type=float, default=1e-4, 
                         help='learning rate (For baselines)')
     parser.add_argument('--weight_decay', type=float, default=1e-4, 
                         help='weight decay of optimizer')
