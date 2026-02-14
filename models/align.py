@@ -89,13 +89,15 @@ class CrossAttnBlock(nn.Module):
         else:
             out = ts + attn_out
 
-        # # FFN
+        # FFN
         out = out + self.ffn(self.ln_ffn(out))
-
-        # If need_weights and average_attn_weights=False, attn_w is (B, num_heads, M, N).
-        # You can average over heads here if you prefer.
-        if need_weights and attn_w is not None and attn_w.dim() == 4:
-            attn_w = attn_w.mean(dim=1)  # -> (B, M, N)
+        
+        # 일단, Head별로 attention weight을 내보내도록 수정
+        
+        # # If need_weights and average_attn_weights=False, attn_w is (B, num_heads, M, N).
+        # # You can average over heads here if you prefer.
+        # if need_weights and attn_w is not None and attn_w.dim() == 4:
+        #     attn_w = attn_w.mean(dim=1)  # -> (B, M, N)
 
         return out, attn_w if need_weights else None
 

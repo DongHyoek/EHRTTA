@@ -91,8 +91,8 @@ class TokenEmbedding(nn.Module):
     def forward(self, x):
         x = self.tokenConv(x.permute(0, 2, 1)).transpose(1, 2)
         return x
-
-class DataEmbedding_ITS_Pooled(nn.Module):
+    
+class DataEmbedding_ITS(nn.Module):
     """
     입력:
       tt   : (B, D, L)  - 변수별 이벤트 시간 (패딩 포함)
@@ -102,11 +102,12 @@ class DataEmbedding_ITS_Pooled(nn.Module):
     출력:
       out  : (B, D, d_model)  - 변수별로 pooling된 표현
     """
-    def __init__(self, d_model: int, n_var: int, device = None, dropout: float = 0.1, use_time: bool = True):
+    def __init__(self, d_model: int, n_var: int, device = None, dropout: float = 0.1, use_time: bool = True, use_te_pool: bool = False):
         super().__init__()
         self.d_model = d_model
         self.n_var = n_var
         self.use_time = use_time
+        self.use_te_pool = use_te_pool
 
         self.time_embedding = TimeEmbedding(d_model)
         # (value, mask) -> d_model (shared)
@@ -141,14 +142,17 @@ class DataEmbedding_ITS_Pooled(nn.Module):
 
         # 변수 ID embedding을 더해 변수별 의미 차이 주입
         vars_prompt = self.variable_embedding(self.vars.view(1, D)).unsqueeze(2) # (1, D, 1, d_model)
-        sequence_emb = sequence_emb + vars_prompt                                          # (B, D, L, d_model)
+        sequence_emb = sequence_emb + vars_prompt                                # (B, D, L, d_model)
 
         sequence_emb = self.dropout(sequence_emb)
 
-        # (B, D, d_model)로 pooling
-        out = masked_mean_pool_seq(sequence_emb, mask)                             # (B, D, d_model)
+        if self.use_te_pool:
+            # (B, D, d_model)로 pooling
+            out = masked_mean_pool_seq(sequence_emb, mask)                             # (B, D, d_model)
+            return out
         
-        return out
+        else:
+            return sequence_emb
 
 # ## Original Codes  
 # class DataEmbedding_ITS_Ind_VarPrompt(nn.Module):
