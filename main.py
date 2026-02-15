@@ -97,7 +97,7 @@ def build_parser():
                         help='learning rate (For baselines)')
     parser.add_argument('--weight_decay', type=float, default=1e-4, 
                         help='weight decay of optimizer')
-    parser.add_argument('--batch_size', type=int, default=8, 
+    parser.add_argument('--batch_size', type=int, default=32, 
                         help='batch size for dataloader')
     parser.add_argument('--scheduler', default=False , action='store_true',
                         help='use scheduler for training')
@@ -181,11 +181,11 @@ if __name__ == "__main__":
     print('Build Dataloaders..')
     
     # Set save dir 
-    ckpt_dir = f'{args.ckpt_dir}/"add_text_enc"/{args.data_source}/{args.task}_{args.task_label}'
+    ckpt_dir = f'{args.ckpt_dir}/{args.data_source}/{args.task}_{args.task_label}'
     if not os.path.exists(ckpt_dir):
         os.makedirs(ckpt_dir)
     
-    metrics_dir = f'{args.metrics_dir}/"add_text_enc"/{args.data_source}/{args.task}_{args.task_label}/{args.data_target}'
+    metrics_dir = f'{args.metrics_dir}/{args.data_source}/{args.task}_{args.task_label}/{args.data_target}'
     if not os.path.exists(metrics_dir):
         os.makedirs(metrics_dir)
 

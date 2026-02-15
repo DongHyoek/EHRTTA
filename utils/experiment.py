@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import evaluate
 import wandb
+import time
 
 from tqdm import tqdm
 from torch.utils.data import Dataset, DataLoader
@@ -101,6 +102,9 @@ def train(args, trn_loader, val_loader, ckpt_dir, use_load=False):
             scaled_x = scaler.transform_source(x, ts_mask)    # 1-1) Time series Scaling
             ts_embedding = ts_embedder(tt, scaled_x, ts_mask) # 1-2) Time series Embedding -> (B, D, L_ts,d_model) 
             
+            # torch.cuda.synchronize()
+            # t0 = time.time()
+
             # Reshape for time series
             B, D, L, d = ts_embedding.shape                     # (B, D, L, d)
             ts_embedding = ts_embedding.reshape(B, D*L, d)      # (B, D * L, d)
@@ -108,13 +112,21 @@ def train(args, trn_loader, val_loader, ckpt_dir, use_load=False):
                 
             # 2) Convert text token id to text embedding vectors    
             text_embedding = text_encoder(texts_batch, var_ids_batch, field_ids_batch, x.shape[0], args.te_n_texts) # (B, L_text, d_model)
+            # torch.cuda.synchronize()
+            # t1 = time.time()
 
             # 3) Cross modality aligning
             aligned_embedding, cross_attn_weights = aligner(ts_embedding, text_embedding, ts_mask, need_weights=args.align_return_weights) # (B, D*L_ts, d_model)
+            # torch.cuda.synchronize()
+            # t2 = time.time()
 
             # 4) input the aligned embedding vector
             outputs = model(inputs_embeds=aligned_embedding, attention_mask=ts_mask, labels=y) # Dict(loss, logits, pooled : [(B, d_model)])
             loss = outputs['loss']
+            # torch.cuda.synchronize()
+            # t3 = time.time()
+
+            # print("text_enc:", t1-t0, "align:", t2-t1, "llama:", t3-t2)
 
             # optimizing
             accelerator.backward(loss)
