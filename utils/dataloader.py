@@ -128,13 +128,256 @@ class TextBundle:
         obs = self.pid2obs.get(pid, pd.DataFrame(columns=[self.args.time_col, self.text_var_col, self.args.val_col]))
         demo = self.pid2demo.get(pid, pd.DataFrame(columns=[self.text_var_col, self.args.val_col]))
 
-        markdown_data = self.text_gen.build_patient_markdown_summary(observations=obs, demographics=demo, mapping_df=self.mapping_df, 
-                                                                     lab_var_list=self.lab_var_list, output_var_names=self.output_var_names)
+        all_texts, all_var_names, var_id_map, all_var_ids, all_field_ids = self.text_gen.build_patient_field_texts(observations=obs, demographics=demo, mapping_df=self.mapping_df, 
+                                                                                                                   lab_var_list=self.lab_var_list, output_var_names=self.output_var_names)
         
-        self.md_cache[pid] = markdown_data
+        self.md_cache[pid] = {'all_texts':all_texts, 'all_var_names':all_var_names, 'var_id_map':var_id_map,
+                              'all_var_ids' : all_var_ids, 'all_field_ids':all_field_ids}
 
-        return markdown_data
+        return {'all_texts':all_texts, 'all_var_names':all_var_names, 'var_id_map':var_id_map, 
+                'all_var_ids' : all_var_ids, 'all_field_ids':all_field_ids}
+    
+class TextGeneration_v2(nn.Module):
+    """
+    build_patient_markdown_summary : To generate the text summary for lab & output event, it's inputs need to observation dataframe, static dataframe, concept dict dataframe, lab variable name list.
+    """
+    def __init__(self, time_col: str = "charttime", id_col: str = "stay_id", text_var_col: str = "full_var_name", val_col: str = "value", unit_col: str = "fixed_unit", 
+                 normal_min : str = 'normal_min', normal_max : str = 'normal_max', round_ndigits: int = 1):
+        # --- Input dataframe column names ---
+        # charttime is already "minutes since admission" (int)
+        self.time_col = time_col     # minutes since ICU admission (int)
+        self.id_col = id_col
+        self.text_var_col = text_var_col
+        self.val_col = val_col
+        self.unit_col = unit_col
+        self.normal_min  = normal_min
+        self.normal_max  = normal_max
 
+        # --- Formatting ---
+        self.round_ndigits = round_ndigits
+
+    def build_var_field_texts(self, var_name: str, unit_str: str, ref_min: Any, ref_max: Any, feats: Optional[Dict[str, Any]]) -> List[str]:
+        # 0) meta
+        meta = (
+            f"var={var_name} unit={unit_str} "
+            f"range_min={self.fmt_number(ref_min, type='normal_min')} "
+            f"range_max={self.fmt_number(ref_max, type='normal_max')}"
+        )
+
+        if feats is None:
+            # 관측 없으면 시간/수치 모두 Not observed 처리
+            return [
+                meta,
+                "t_first=NA", "t_last=NA", "n_obs=0", "t_interval=NA",
+                "v_min=NA", "v_median=NA", "v_max=NA", "v_mean=NA", "v_std=NA"
+            ]
+
+        # 1) time fields
+        t_first = f"t_first={self.fmt_number(feats['first_min'], ndigits=0)}"
+        t_last  = f"t_last={self.fmt_number(feats['last_min'], ndigits=0)}"
+        t_n     = f"n_obs={self.fmt_number(feats['n_obs'], ndigits=0)}"
+        t_int   = f"t_interval={self.fmt_number(feats['interval_mean_min'], ndigits=0)}"
+
+        # 2) value fields
+        vs = feats["value_stats"]
+        v_min    = f"v_min={self.fmt_number(vs['min'], ndigits=1)}"
+        v_median = f"v_median={self.fmt_number(vs['median'], ndigits=1)}"
+        v_max    = f"v_max={self.fmt_number(vs['max'], ndigits=1)}"
+        v_mean   = f"v_mean={self.fmt_number(vs['mean'], ndigits=1)}"
+        v_std    = f"v_std={self.fmt_number(vs['std'], ndigits=1)}"
+
+        return [meta, t_first, t_last, t_n, t_int, v_min, v_median, v_max, v_mean, v_std]
+
+    def build_patient_field_texts(
+        self,
+        observations: pd.DataFrame,
+        demographics: pd.DataFrame,
+        mapping_df: pd.DataFrame,
+        lab_var_list: List[str] = None,
+        output_var_names: List[str] = ['Urine output'],
+        ) -> Tuple[List[str], List[str], List[str], torch.LongTensor]:
+
+        """
+        Returns:
+        all_texts:       list[str]  (demo + lab/output flattened / length = num_demo + num_lab_output * 10)
+        all_var_names:   list[str]  (demo + lab/output variable names / length = num_demo + num_lab_output * 10)
+        var_id_map   :   dict[str,int]  (the dictionary of emerged variables)
+        all_var_ids  :   dict[str:int] (length = num_demo + num_lab_output)
+        all_field_ids:   torch.tensor (length = len(all_texts) / values 0..9 : lab, output fields / 10 : demographic)
+        """
+
+        # ----------------------------
+        # 0) Demographics -> plain texts
+        # ----------------------------
+        # demographics df assumed to have columns: full_var_name, value
+        def _get_demo(name: str, default="NA"):
+            try:
+                v = demographics.loc[demographics["full_var_name"].eq(name), "value"].values[0]
+                return v
+            except Exception:
+                return default
+
+        all_var_names = []
+        all_texts = []
+        all_field_ids = []
+
+        demo_texts = [
+            f"age={self.fmt_number(_get_demo('Age'), ndigits=0)}",
+            f"sex={_get_demo('Sex')}",
+            f"weight_kg={self.fmt_number(_get_demo('Weight'), ndigits=1)}",
+            f"height_cm={self.fmt_number(_get_demo('Height'), ndigits=1)}",
+        ]
+
+        demo_vars = ["Age", "Sex", "Weight", "Height"]
+        all_var_names.extend(demo_vars)
+        all_texts.extend(demo_texts)
+        all_field_ids.extend([10 for v in demo_vars]) 
+
+        # ----------------------------
+        # 1) Labs/Outputs -> 10-field texts
+        # ----------------------------
+        df = observations.copy()
+        df[self.val_col] = pd.to_numeric(df[self.val_col], errors="coerce")
+        df[self.time_col] = pd.to_numeric(df[self.time_col], errors="coerce")
+
+        is_output = df[self.text_var_col].isin(output_var_names)
+        labs_df = df[~is_output].copy()
+        output_df = df[is_output].copy()
+
+        mapping_key = self.text_var_col # "full_var_name"
+        meta_cols = [self.unit_col, self.normal_min, self.normal_max]
+        meta_cols = [c for c in meta_cols if c in mapping_df.columns]
+
+        var_meta = (
+            mapping_df.drop_duplicates(subset=[mapping_key])
+            .set_index(mapping_key)[meta_cols]
+            .to_dict(orient="index")
+        )
+
+        def _append_var(var_name: str, section_df: pd.DataFrame):
+            meta = var_meta.get(var_name, {})
+            unit_str = meta.get(self.unit_col, "") if meta else ""
+            ref_min = meta.get(self.normal_min, None) if meta else None
+            ref_max = meta.get(self.normal_max, None) if meta else None
+
+            var_rows = section_df[section_df[self.text_var_col] == var_name]
+            n_valid = int(var_rows[self.val_col].notna().sum()) if not var_rows.empty else 0
+
+            feats = None
+            if n_valid > 0:
+                feats = self.compute_variable_features(var_rows)
+
+            texts_10 = self.build_var_field_texts(var_name, unit_str, ref_min, ref_max, feats)
+            assert len(texts_10) == 10
+
+            all_var_names.extend([var_name]*len(texts_10))
+            all_texts.extend(texts_10)
+            all_field_ids.extend(list(range(len(texts_10))))
+
+        # labs
+        for vname in lab_var_list:
+            _append_var(vname, labs_df)
+
+        # outputs
+        for vname in sorted(output_var_names):
+            _append_var(vname, output_df)
+
+        # ----------------------------
+        # 2) Make var_id_map in FIRST-APPEAR order & per-text var_ids tensor
+        # ----------------------------
+        var_id_map = {}
+        var_ids_list = []
+        next_id = 0
+        for vn in all_var_names:
+            if vn not in var_id_map:
+                var_id_map[vn] = next_id
+                next_id += 1
+            var_ids_list.append(var_id_map[vn])
+        
+        all_var_ids = torch.tensor(var_ids_list)
+        all_field_ids = torch.tensor(all_field_ids)
+
+        return all_texts, all_var_names, var_id_map, all_var_ids, all_field_ids
+
+    def fmt_number(self, x: Any, ndigits: int = 1, type='measurement') -> str:
+        """Format numbers; use 'NA' for None/NaN."""
+        
+        if x is None and type == 'measurement':
+            return "NA"
+        
+        if pd.isna(x) and type == 'normal_max':
+            return "inf"
+        
+        if pd.isna(x) and type == 'normal_min':
+            return "-inf"
+
+        try:
+            if isinstance(x, float) and np.isnan(x):
+                return "NA"
+        except Exception:
+            pass
+
+        if isinstance(x, (int, np.integer)):
+            return str(int(x))
+
+        try:
+            return f"{float(x):.{ndigits}f}"
+        except Exception:
+            return "NA"
+
+
+    def nan_stats(self, x: np.ndarray) -> Dict[str, Optional[float]]:
+        """Return min/max/mean/std on numeric array, ignoring NaNs."""
+        x = np.asarray(x, dtype=float)
+        x = x[~np.isnan(x)]
+        if x.size == 0:
+            return {"min": None, "max": None, 'median' : None ,"mean": None, "std": None}
+
+        std = float(np.std(x, ddof=1)) if x.size > 1 else 0.0
+        return {
+            "min": float(np.min(x)),
+            "max": float(np.max(x)),
+            'median' : float(np.median(x)),
+            "mean": float(np.mean(x)),
+            "std": std,
+        }
+    
+    def compute_variable_features(self, var_df: pd.DataFrame) -> Dict[str, Any]:
+
+        """
+        Compute summary features for ONE variable group.
+        Assumption: self.time_col is already minutes (int) since admission.
+        """
+        df_sorted = var_df.sort_values(self.time_col).copy()
+
+        times_min = pd.to_numeric(df_sorted[self.time_col], errors="coerce").to_numpy(dtype=float)
+        values = pd.to_numeric(df_sorted[self.val_col], errors="coerce").to_numpy(dtype=float)
+
+        # observation count (non-NaN values)
+        n_obs = int(np.sum(~np.isnan(values)))
+
+        # first/last time (minutes)
+        first_min = float(times_min[0]) if times_min.size else None
+        last_min = float(times_min[-1]) if times_min.size else None
+
+        # interval mean (unique time 기준)
+        unique_times = np.unique(times_min[~np.isnan(times_min)])
+        if unique_times.size >= 2:
+            interval_mean_min = float(np.mean(np.diff(unique_times)))
+        else:
+            interval_mean_min = None
+
+        # value stats
+        value_stats = self.nan_stats(values)
+
+        return {
+            "first_min": first_min,
+            "last_min": last_min,
+            "n_obs": n_obs,
+            "interval_mean_min": interval_mean_min,
+            "value_stats": value_stats
+            }
+    
 class TextGeneration(nn.Module):
     """
     build_patient_markdown_summary : To generate the text summary for lab & output event, it's inputs need to observation dataframe, static dataframe, concept dict dataframe, lab variable name list.
@@ -180,12 +423,12 @@ class TextGeneration(nn.Module):
         try:
             md_lines.append(f"- Weight : {self.fmt_number(demographics[demographics['full_var_name'] == 'Weight']['value'].values[0])}kg")
         except:
-            md_lines.append(f"- Weight : Not observed")
+            md_lines.append(f"- Weight : NA")
         
         try:
             md_lines.append(f"- Height : {self.fmt_number(demographics[demographics['full_var_name'] == 'Height']['value'].values[0])}cm \n")
         except:
-            md_lines.append(f"- Height : Not observed")
+            md_lines.append(f"- Height : NA")
 
         md_lines.append("")
 
@@ -228,7 +471,7 @@ class TextGeneration(nn.Module):
                 # 3) if no observations -> keep unit/range, but stats/time are Not observed
                 n_valid = int(var_rows[self.val_col].notna().sum()) if not var_rows.empty else 0
                 if n_valid == 0:
-                    section_lines.append("\t- (Not observed)")
+                    section_lines.append("\t- (NA)")
                     continue
 
                 # 4) has observations -> compute features
@@ -258,10 +501,10 @@ class TextGeneration(nn.Module):
         return "\n".join(md_lines).strip()
 
     def fmt_number(self, x: Any, ndigits: int = 1, type='measurement') -> str:
-        """Format numbers; use 'Not observed' for None/NaN."""
+        """Format numbers; use 'NA' for None/NaN."""
         
         if x is None and type == 'measurement':
-            return "Not observed"
+            return "NA"
         
         if pd.isna(x) and type == 'normal_max':
             return "inf"
@@ -271,7 +514,7 @@ class TextGeneration(nn.Module):
 
         try:
             if isinstance(x, float) and np.isnan(x):
-                return "Not observed"
+                return "NA"
         except Exception:
             pass
 
@@ -281,7 +524,7 @@ class TextGeneration(nn.Module):
         try:
             return f"{float(x):.{ndigits}f}"
         except Exception:
-            return "Not observed"
+            return "NA"
 
 
     def nan_stats(self, x: np.ndarray) -> Dict[str, Optional[float]]:
@@ -479,19 +722,15 @@ class MappingData:
 
 def make_collate_ists_with_text(args, D, text_bundle : TextBundle):
     """
-        #     print(tt.shape)   # (B,D,L)
-        #     print(xx.shape)   # (B,D,L)
-        #     print(mask.shape) # (B,D,L)
-        #     print(len(texts)) # (B), list
-        #     print(input_ids.shape) # (B, T_t, d_model)
-        #     print(text_mask.shape) # (B, T_t)
-        #     print(y.shape)    # (B), tensor
-        #     print(len(pids))  # (B), list
+        #     print(tt.shape)         # (B,D,L)
+        #     print(xx.shape)         # (B,D,L)
+        #     print(mask.shape)       # (B,D,L)
+        #     print(len(texts_batch)) # (B*N_text), list
+        #     print(var_ids_batch)    # (B*N_text), tensor
+        #     print(field_ids_batch)    # (B*N_text), tensor
+        #     print(y.shape)          # (B), tensor
+        #     print(len(pids))        # (B), list
     """
-    tokenizer = AutoTokenizer.from_pretrained(args.model_id, use_fast=True)
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-    tokenizer.padding_side = "right"
     
     def collate(batch):
         B = len(batch)
@@ -508,7 +747,7 @@ def make_collate_ists_with_text(args, D, text_bundle : TextBundle):
 
         tt = torch.zeros(B, D, Lmax, dtype=torch.float32)
         xx = torch.zeros(B, D, Lmax, dtype=torch.float32)
-        mask = torch.zeros(B, D, Lmax, dtype=torch.float32)
+        ts_mask = torch.zeros(B, D, Lmax, dtype=torch.float32)
 
         for b, sample in enumerate(batch):
             for d in range(D):
@@ -521,16 +760,25 @@ def make_collate_ists_with_text(args, D, text_bundle : TextBundle):
 
                 tt[b, d, :Ld] = time         # (B, D, L)
                 xx[b, d, :Ld] = value         # (B, D, L)
-                mask[b, d, :Ld] = 1.0     # (B, D, L)
+                ts_mask[b, d, :Ld] = 1     # (B, D, L)
 
         # ---- Text (pid와 매칭) ----
-        texts = [text_bundle.get_markdown(pid) for pid in pids]
+        packs = [text_bundle.get_markdown(pid) for pid in pids] # [dict, dict, dict ...]
+        
+        texts_batch = []
+        var_ids_batch = []
+        field_ids_batch = []
 
-        # ---- Tokenizing ----
-        text_enc = tokenizer(texts, padding=args.text_pad_type, return_tensors='pt')
-        input_ids, text_mask = text_enc["input_ids"], text_enc['attention_mask']
+        for pack in packs:
+            texts_batch.extend(pack["all_texts"])
+            var_ids_batch.append(pack["all_var_ids"])
+            if "all_field_ids" in pack and pack["all_field_ids"] is not None:
+                field_ids_batch.append(pack["all_field_ids"])
 
-        return tt, xx, mask, input_ids, text_mask, y, pids
+        var_ids_batch = torch.cat(var_ids_batch, dim=0)  
+        field_ids_batch = torch.cat(field_ids_batch, dim=0) if field_ids_batch else None
+
+        return tt, xx, ts_mask, texts_batch, var_ids_batch, field_ids_batch, y, pids
     
     return collate
 
@@ -560,7 +808,7 @@ def split_stay_ids_ehr(args, df):
         random_state=args.seed
     )
 
-    # print(f"Train size: {len(train_ids)}, Valid size: {len(valid_ids)}, Test size: {len(test_ids)}")
+    print(f"Train size: {len(train_ids)}, Valid size: {len(valid_ids)}, Test size: {len(test_ids)}")
     
     return train_ids, valid_ids, test_ids
 
@@ -594,7 +842,7 @@ def build_loaders(args):
     mapping_df, lab_var_list, output_var_names = mappingdata.build_mapping_df()
 
     # 4) Generate TextGeneration + TextBundle 
-    text_gen = TextGeneration(time_col=args.time_col, id_col=args.pid_col,
+    text_gen = TextGeneration_v2(time_col=args.time_col, id_col=args.pid_col,
                               text_var_col="full_var_name", val_col="value", unit_col="fixed_unit",
                               normal_min="normal_min", normal_max="normal_max", round_ndigits=1)
 

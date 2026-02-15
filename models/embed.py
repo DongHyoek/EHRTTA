@@ -7,8 +7,9 @@ import math
 import sys
 
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple, Set, Any
+from typing import Dict, Optional, Tuple, List, Set, Any
 from torch.nn.utils import weight_norm
+from transformers import AutoTokenizer
 
 ## Below codes are sourced by https://github.com/usail-hkust/ISTS-PLM
 
@@ -102,12 +103,12 @@ class DataEmbedding_ITS(nn.Module):
     출력:
       out  : (B, D, d_model)  - 변수별로 pooling된 표현
     """
-    def __init__(self, d_model: int, n_var: int, device = None, dropout: float = 0.1, use_time: bool = True, use_te_pool: bool = False):
+    def __init__(self, d_model: int, n_var: int, device = None, dropout: float = 0.1, use_time: bool = True, use_ts_pool: bool = False):
         super().__init__()
         self.d_model = d_model
         self.n_var = n_var
         self.use_time = use_time
-        self.use_te_pool = use_te_pool
+        self.use_ts_pool = use_ts_pool
 
         self.time_embedding = TimeEmbedding(d_model)
         # (value, mask) -> d_model (shared)
@@ -146,14 +147,141 @@ class DataEmbedding_ITS(nn.Module):
 
         sequence_emb = self.dropout(sequence_emb)
 
-        if self.use_te_pool:
+        if self.use_ts_pool:
             # (B, D, d_model)로 pooling
-            out = masked_mean_pool_seq(sequence_emb, mask)                             # (B, D, d_model)
+            out = self.masked_mean_pool_seq(sequence_emb, mask)                             # (B, D, d_model)
             return out
         
         else:
             return sequence_emb
+        
+    def masked_mean_pool_seq(self, h, mask, eps=1e-8):
+        """
+        h   : (B, D, L, d_model)
+        mask: (B, D, L) with 1 valid, 0 pad
+        return: (B, D, d_model)
+        """
+        m = mask.unsqueeze(-1)                      # (B, D, L, 1)
+        summed = (h * m).sum(dim=2)                 # (B, D, d_model)
+        denom = m.sum(dim=2).clamp_min(eps)         # (B, D, 1)
+        return summed / denom
 
+class TextEncoder(nn.Module):
+    """
+    texts: list[str] length = B * N_text
+    var_ids: LongTensor (B * N_text,)  in [0..n_var_types-1]
+    field_ids: LongTensor (B * N_text,) in [0..n_field_types-1]
+
+    -> tokenize
+    -> llama embedding lookup (no llama forward)
+    -> prepend conditional CLS: cls_shared + var_tag[var_id] + field_tag[field_id]
+    -> tiny TransformerEncoder
+    -> output CLS vector per text item
+    -> reshape (B, N_text, d_model)
+    """
+    def __init__(self, args, model, use_ln_out: bool = True, # max_position=256,
+                 tag_init_std: float = 0.02, tag_scale_init: float = 1.0, device='cpu'):
+        
+        super(TextEncoder, self).__init__()
+
+        self.args = args
+        self.device=device
+
+        # tokenizer
+        self.tokenizer = AutoTokenizer.from_pretrained(args.model_id, use_fast=True)
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+
+        # llama embedding table only
+        self.embed = model.backbone.get_input_embeddings()
+        self.d_model = self.embed.embedding_dim
+
+        # shared CLS seed
+        self.cls_shared = nn.Parameter(torch.zeros(1, 1, self.d_model))
+        nn.init.normal_(self.cls_shared, mean=0.0, std=tag_init_std)
+
+        # conditional tags
+        self.var_tag = nn.Embedding(args.te_n_vars, self.d_model)     # e.g., 41 labs + 4 demos = 45
+        self.field_tag = nn.Embedding(args.te_n_fields, self.d_model) # e.g., 10 lab fields + 4 demo fields = 14
+        nn.init.normal_(self.var_tag.weight, mean=0.0, std=tag_init_std)
+        nn.init.normal_(self.field_tag.weight, mean=0.0, std=tag_init_std)
+
+        # optional: learnable scale to keep conditioning stable
+        self.tag_scale = nn.Parameter(torch.tensor(float(tag_scale_init)))
+
+        # 일단 사용 X
+        # # abs position embedding for tiny encoder (safe, lightweight)
+        # self.pos = nn.Embedding(max_pos, self.d_model)
+        # nn.init.normal_(self.pos.weight, mean=0.0, std=tag_init_std)
+
+        # tiny transformer encoder
+        enc_layer = nn.TransformerEncoderLayer(
+            d_model=self.d_model,
+            nhead=args.te_n_heads,
+            dim_feedforward= int(0.5 * self.d_model),
+            dropout=args.te_dropout,
+            batch_first=True,
+            activation="gelu",
+            norm_first=True,   # Pre-LN
+        )
+        self.encoder = nn.TransformerEncoder(enc_layer, num_layers=args.te_n_layers)
+        self.ln_out = nn.LayerNorm(self.d_model) if use_ln_out else nn.Identity()
+
+    @torch.no_grad()
+    def _tokenize(self, texts) -> Tuple[torch.Tensor, torch.Tensor]:
+        
+        enc = self.tokenizer(texts, padding=self.args.text_pad_type, return_tensors='pt')        
+        
+        return enc["input_ids"], enc["attention_mask"]
+
+
+    def forward(self, texts: List[str], var_ids: torch.Tensor, field_ids: torch.Tensor, 
+                B: int, N_text: int):
+        """
+        returns:
+          text_vecs: (B, N_text, d_model)
+          T : B * N_text
+        """
+        assert len(texts) == B * N_text, f"len(texts)={len(texts)} != B*N_text={B*N_text}"
+        assert var_ids.numel() == B * N_text, "var_ids shape mismatch"
+        assert field_ids.numel() == B * N_text, "field_ids shape mismatch"
+
+        var_ids = var_ids.long()
+        field_ids = field_ids.long()
+
+        input_ids, text_mask = self._tokenize(texts)
+        input_ids = input_ids.to(self.device)   # (T, L)
+        text_mask = text_mask.to(self.device)   # (T, L)
+
+        T, L = input_ids.shape
+
+        # token embeddings
+        text_embedding = self.embed(input_ids)          # (T, L, D)
+
+        # conditional CLS: (T, 1, D)
+        cls = self.cls_shared.expand(T, 1, self.d_model)  # (T,1,D)
+        cls = cls + self.tag_scale * (self.var_tag(var_ids).unsqueeze(1) + self.field_tag(field_ids).unsqueeze(1))
+
+        x = torch.cat([cls, text_embedding], dim=1)     # (T, 1+L, D)
+
+        # pad mask for transformer (True=pad)
+        cls_valid = torch.ones((T, 1), device=self.device, dtype=text_mask.dtype)
+        attn2 = torch.cat([cls_valid, text_mask], dim=1)   # (T, 1+L)
+        src_key_padding_mask = ~attn2.bool()
+        
+        # Not in use
+        # # abs pos embed
+        # seq_len = x.size(1)
+        # pos_ids = torch.arange(seq_len, device=self.device).unsqueeze(0).expand(T, seq_len)
+        # x = x + self.pos(pos_ids)
+
+        # tiny encoder
+        out = self.encoder(x, src_key_padding_mask=src_key_padding_mask)  # (T, 1+L, D)
+
+        pooled = self.ln_out(out[:, 0, :])  # (T, D)
+        
+        return pooled.view(B, N_text, self.d_model)
+    
 # ## Original Codes  
 # class DataEmbedding_ITS_Ind_VarPrompt(nn.Module):
 #     def __init__(self, c_in, d_model, n_var, device=None, dropout=0.1, use_te=True):
@@ -198,14 +326,3 @@ class DataEmbedding_ITS(nn.Module):
 #         x = x.permute(0, 2, 1, 3).reshape(B*D, L+1, self.d_model) # (B*D, L+1, d_model)
  
 #         return self.dropout(x), vars_prompt
-
-def masked_mean_pool_seq(h, mask, eps=1e-8):
-    """
-    h   : (B, D, L, d_model)
-    mask: (B, D, L) with 1 valid, 0 pad
-    return: (B, D, d_model)
-    """
-    m = mask.unsqueeze(-1)                      # (B, D, L, 1)
-    summed = (h * m).sum(dim=2)                 # (B, D, d_model)
-    denom = m.sum(dim=2).clamp_min(eps)         # (B, D, 1)
-    return summed / denom

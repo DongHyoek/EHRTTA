@@ -10,8 +10,8 @@
 
 # Embedding 순서 
 1) DataEmbedding_ITS_Ind_VarPrompt로 time series 데이터 serialization하게 만들어서 임베딩
-2) Tokenized Text max_length, Timeseries max_length 설정
-3) 시계열 길이가 너무 적은 거 같긴 함.. 
+2) 시계열 데이터 pooling 하지 않고 만듬.
+3) 텍스트 데이터는 LLM model에 한 번 태워서 나온 마지막 hidden layer를 활용하도록 함. 
 
 # Aligning 과정
 - (수정사항) Cross Attention에서 gate를 아예 사용하지 않고 학습해보기. 

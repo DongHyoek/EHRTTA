@@ -17,14 +17,26 @@ def build_parser():
     # Embedding modle details
     parser.add_argument('--use_time', default=False, action='store_true',
                         help='define using time embedding')
-    parser.add_argument('--te_dropout', type=float, default=0.1,
+    parser.add_argument('--ts_dropout', type=float, default=0.1,
                         help='the dropout rate of time series embdding modules')
-    parser.add_argument('--use_te_pool', default=False, action='store_true',
+    parser.add_argument('--use_ts_pool', default=False, action='store_true',
                         help='remaining the time sequence length yes/no?')
     parser.add_argument('--use_norm_ema', default=False, action='store_true',
                         help='use normalization with ema')
     parser.add_argument('--norm_ema_alpha', type=float, default=0.1,
                         help='define the alpha value for ema')
+    parser.add_argument('--te_n_layers', type=int, default=1,
+                        help='the number of layers for text encoding attention')
+    parser.add_argument('--te_n_heads', type=int, default=8,
+                        help='the number of heads for text encoding attention')
+    parser.add_argument('--te_dropout', type=float, default=0.0,
+                        help='the dropout rate of text encoding modules')
+    parser.add_argument('--te_n_vars', type=int, default=45,
+                        help='the number of demographic, lab, output vars')
+    parser.add_argument('--te_n_fields', type=int, default=11,
+                        help='the number of field types')
+    parser.add_argument('--te_n_texts', type=int, default=414,
+                        help='the length of total text lists')
     parser.add_argument('--align_n_heads', type=int, default=8,
                         help='the number of heads for cross attention')
     parser.add_argument('--align_dropout', type=float, default=0.0,
@@ -85,7 +97,7 @@ def build_parser():
                         help='learning rate (For baselines)')
     parser.add_argument('--weight_decay', type=float, default=1e-4, 
                         help='weight decay of optimizer')
-    parser.add_argument('--batch_size', type=int, default=32, 
+    parser.add_argument('--batch_size', type=int, default=8, 
                         help='batch size for dataloader')
     parser.add_argument('--scheduler', default=False , action='store_true',
                         help='use scheduler for training')
@@ -169,11 +181,11 @@ if __name__ == "__main__":
     print('Build Dataloaders..')
     
     # Set save dir 
-    ckpt_dir = f'{args.ckpt_dir}/{args.data_source}/{args.task}_{args.task_label}'
+    ckpt_dir = f'{args.ckpt_dir}/"add_text_enc"/{args.data_source}/{args.task}_{args.task_label}'
     if not os.path.exists(ckpt_dir):
         os.makedirs(ckpt_dir)
     
-    metrics_dir = f'{args.metrics_dir}/{args.data_source}/{args.task}_{args.task_label}/{args.data_target}'
+    metrics_dir = f'{args.metrics_dir}/"add_text_enc"/{args.data_source}/{args.task}_{args.task_label}/{args.data_target}'
     if not os.path.exists(metrics_dir):
         os.makedirs(metrics_dir)
 
