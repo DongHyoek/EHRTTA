@@ -11,7 +11,7 @@ from transformers import AutoConfig, AutoTokenizer, AutoModel, get_cosine_schedu
 from accelerate import Accelerator
 
 from models.align import ModalityAlignment
-from models.embed import DataEmbedding_ITS, TextEncoder
+from models.embed import DataEmbedding_ITS, TextEncoder, TextEncoder_v2
 from models.llm import PEFTTSLLM
 from models.tta import PEFTAdaINPatcher
 from utils.norm import TSScaler
@@ -26,7 +26,7 @@ def train(args, trn_loader, val_loader, ckpt_dir, use_load=False):
         accelerator = Accelerator(mixed_precision='bf16', cpu=True, log_with='wandb') # Adaptation, Evaluation mode
 
     accelerator.init_trackers(project_name="EHRTTA", config=vars(args), 
-                              init_kwargs={"wandb": {"name": f"{args.model_id}_{args.seed}_{args.task_label}_{args.data_source}", "tags": ["dora", "retain time series length", "use CLS token for text embeddings"]}})
+                              init_kwargs={"wandb": {"name": f"{args.model_id}_{args.seed}_{args.task_label}_{args.data_source}", "tags": ["dora", "retain time series length", "use CLS token for text embeddings", "delete FFN blocks"]}})
     global_step = 0
 
     device = accelerator.device
@@ -40,7 +40,7 @@ def train(args, trn_loader, val_loader, ckpt_dir, use_load=False):
 
     ts_embedder = DataEmbedding_ITS(d_model=model.hidden_size, n_var = args.n_time_cols, device=device, 
                                            dropout=args.ts_dropout, use_time=args.use_time, use_ts_pool=args.use_ts_pool).to(device)
-    text_encoder = TextEncoder(args, model, use_ln_out=True, device=device).to(device)
+    text_encoder = TextEncoder_v2(args, model, use_ln_out=True, device=device).to(device)
 
     aligner = ModalityAlignment(d_model=model.hidden_size, n_heads=args.align_n_heads, 
                                 dropout=args.align_dropout, use_gating=args.use_align_gate).to(device)
@@ -98,35 +98,36 @@ def train(args, trn_loader, val_loader, ckpt_dir, use_load=False):
             tt, x, ts_mask, texts_batch, var_ids_batch, field_ids_batch, y, pids = batch
             tt, x, ts_mask, var_ids_batch, field_ids_batch, y = tt.to(device), x.to(device), ts_mask.to(device), var_ids_batch.to(device), field_ids_batch.to(device), y.to(device)
 
-            # 1) Time series Embedding 
-            scaled_x = scaler.transform_source(x, ts_mask)    # 1-1) Time series Scaling
-            ts_embedding = ts_embedder(tt, scaled_x, ts_mask) # 1-2) Time series Embedding -> (B, D, L_ts,d_model) 
-            
-            # torch.cuda.synchronize()
-            # t0 = time.time()
-
-            # Reshape for time series
-            B, D, L, d = ts_embedding.shape                     # (B, D, L, d)
-            ts_embedding = ts_embedding.reshape(B, D*L, d)      # (B, D * L, d)
-            ts_mask = ts_mask.reshape(B, D*L)                   # (B, D*L)
+            with accelerator.autocast():   # <-- 이게 핵심
+                # 1) Time series Embedding 
+                scaled_x = scaler.transform_source(x, ts_mask)    # 1-1) Time series Scaling
+                ts_embedding = ts_embedder(tt, scaled_x, ts_mask) # 1-2) Time series Embedding -> (B, D, L_ts,d_model) 
                 
-            # 2) Convert text token id to text embedding vectors    
-            text_embedding = text_encoder(texts_batch, var_ids_batch, field_ids_batch, x.shape[0], args.te_n_texts) # (B, L_text, d_model)
-            # torch.cuda.synchronize()
-            # t1 = time.time()
+                torch.cuda.synchronize()
+                t0 = time.time()
 
-            # 3) Cross modality aligning
-            aligned_embedding, cross_attn_weights = aligner(ts_embedding, text_embedding, ts_mask, need_weights=args.align_return_weights) # (B, D*L_ts, d_model)
-            # torch.cuda.synchronize()
-            # t2 = time.time()
+                # Reshape for time series
+                B, D, L, d = ts_embedding.shape                     # (B, D, L, d)
+                ts_embedding = ts_embedding.reshape(B, D*L, d)      # (B, D * L, d)
+                ts_mask = ts_mask.reshape(B, D*L)                   # (B, D*L)
+                    
+                # 2) Convert text token id to text embedding vectors    
+                text_embedding = text_encoder(texts_batch, var_ids_batch, field_ids_batch, x.shape[0], args.te_n_texts) # (B, L_text, d_model)
+                # torch.cuda.synchronize()
+                # t1 = time.time()
 
-            # 4) input the aligned embedding vector
-            outputs = model(inputs_embeds=aligned_embedding, attention_mask=ts_mask, labels=y) # Dict(loss, logits, pooled : [(B, d_model)])
-            loss = outputs['loss']
-            # torch.cuda.synchronize()
-            # t3 = time.time()
+                # 3) Cross modality aligning
+                aligned_embedding, cross_attn_weights = aligner(ts_embedding, text_embedding, ts_mask, need_weights=args.align_return_weights) # (B, D*L_ts, d_model)
+                # torch.cuda.synchronize()
+                # t2 = time.time()
 
-            # print("text_enc:", t1-t0, "align:", t2-t1, "llama:", t3-t2)
+                # 4) input the aligned embedding vector
+                outputs = model(inputs_embeds=aligned_embedding, attention_mask=ts_mask, labels=y) # Dict(loss, logits, pooled : [(B, d_model)])
+                loss = outputs['loss']
+                # torch.cuda.synchronize()
+                # t3 = time.time()
+
+                # print("text_enc:", t1-t0, "align:", t2-t1, "llama:", t3-t2)
 
             # optimizing
             accelerator.backward(loss)
@@ -169,24 +170,25 @@ def train(args, trn_loader, val_loader, ckpt_dir, use_load=False):
                 tt, x, ts_mask, texts_batch, var_ids_batch, field_ids_batch, y, pids = batch
                 tt, x, ts_mask, var_ids_batch, field_ids_batch, y = tt.to(device), x.to(device), ts_mask.to(device), var_ids_batch.to(device), field_ids_batch.to(device), y.to(device)
 
-                # 1) Time series Embedding 
-                scaled_x = scaler.transform_source(x, ts_mask)    # 1-1) Time series Scaling
-                ts_embedding = ts_embedder(tt, scaled_x, ts_mask) # 1-2) Time series Embedding -> (B,D,d_model)
+                with accelerator.autocast():   # <-- 이게 핵심
+                    # 1) Time series Embedding 
+                    scaled_x = scaler.transform_source(x, ts_mask)    # 1-1) Time series Scaling
+                    ts_embedding = ts_embedder(tt, scaled_x, ts_mask) # 1-2) Time series Embedding -> (B,D,d_model)
 
-                # Reshape for time series
-                B, D, L, d = ts_embedding.shape                     # (B, D, L, d)
-                ts_embedding = ts_embedding.reshape(B, D*L, d)      # (B, D * L, d)
-                ts_mask = ts_mask.reshape(B, D*L)                   # (B, D*L)
+                    # Reshape for time series
+                    B, D, L, d = ts_embedding.shape                     # (B, D, L, d)
+                    ts_embedding = ts_embedding.reshape(B, D*L, d)      # (B, D * L, d)
+                    ts_mask = ts_mask.reshape(B, D*L)                   # (B, D*L)
 
-                # 2) Convert text token id to text embedding vectors    
-                text_embedding = text_encoder(texts_batch, var_ids_batch, field_ids_batch, len(texts_batch), args.te_n_texts)
+                    # 2) Convert text token id to text embedding vectors    
+                    text_embedding = text_encoder(texts_batch, var_ids_batch, field_ids_batch, len(texts_batch), args.te_n_texts)
 
-                # 3) Cross modality aligning
-                aligned_embedding, cross_attn_weights = aligner(ts_embedding, text_embedding, ts_mask, need_weights=args.align_return_weights) # (B, D, d_model)
+                    # 3) Cross modality aligning
+                    aligned_embedding, cross_attn_weights = aligner(ts_embedding, text_embedding, ts_mask, need_weights=args.align_return_weights) # (B, D, d_model)
 
-                # 4) input the aligned embedding vector
-                outputs = model(inputs_embeds=aligned_embedding, attention_mask=ts_mask, labels=y) # Dict(loss, logits, pooled : [(B, d_model)])
-                
+                    # 4) input the aligned embedding vector
+                    outputs = model(inputs_embeds=aligned_embedding, attention_mask=ts_mask, labels=y) # Dict(loss, logits, pooled : [(B, d_model)])
+                    
                 running_val_loss  += outputs['loss'].item()
                 
                 logits, gt = accelerator.gather_for_metrics((outputs['logits'], y))
@@ -196,8 +198,8 @@ def train(args, trn_loader, val_loader, ckpt_dir, use_load=False):
                 else:
                     evaluator.update_regression(logits, gt)
 
-                torch.save(cross_attn_weights.detach().cpu(), f'{ckpt_dir}/attn_weights_valid_{i:03d}.pt')
-                torch.save(torch.tensor(pids), f'{ckpt_dir}/pids_valid_{i:03d}.pt')
+                # torch.save(cross_attn_weights.detach().cpu(), f'{ckpt_dir}/attn_weights_valid_{i:03d}.pt')
+                # torch.save(torch.tensor(pids), f'{ckpt_dir}/pids_valid_{i:03d}.pt')
 
             valid_loss = running_val_loss / len(val_loader)
             valid_metrics = evaluator.compute()
@@ -287,7 +289,7 @@ def inference(args, data_loader, ckpt_dir, use_load=True):
     ts_embedder = DataEmbedding_ITS(d_model=model.hidden_size, n_var = args.n_time_cols, device=device, 
                                            dropout=args.ts_dropout, use_time=True, use_ts_pool=args.use_ts_pool).to(device)
     
-    text_encoder = TextEncoder(args, model, use_ln_out=True, device=device).to(device)
+    text_encoder = TextEncoder_v2(args, model, use_ln_out=True, device=device).to(device)
 
     aligner = ModalityAlignment(d_model=model.hidden_size, n_heads=args.align_n_heads, 
                                 dropout=args.align_dropout, use_gating=args.use_align_gate).to(device)
@@ -318,25 +320,26 @@ def inference(args, data_loader, ckpt_dir, use_load=True):
             tt, x, ts_mask, texts_batch, var_ids_batch, field_ids_batch, y, pids = batch
             tt, x, ts_mask, var_ids_batch, field_ids_batch, y = tt.to(device), x.to(device), ts_mask.to(device), var_ids_batch.to(device), field_ids_batch.to(device), y.to(device)
 
-            # 1) Time series Embedding 
-            scaled_x = scaler.transform_source(x, ts_mask)    # 1-1) Time series Scaling
-            ts_embedding = ts_embedder(tt, scaled_x, ts_mask) # 1-2) Time series Embedding -> (B,D,d_model)
-            
-            # Reshape for time series
-            B, D, L, d = ts_embedding.shape                     # (B, D, L, d)
-            ts_embedding = ts_embedding.reshape(B, D*L, d)      # (B, D * L, d)
-            ts_mask = ts_mask.reshape(B, D*L)                   # (B, D*L)
+            with accelerator.autocast():   # <-- 이게 핵심
+                # 1) Time series Embedding 
+                scaled_x = scaler.transform_source(x, ts_mask)    # 1-1) Time series Scaling
+                ts_embedding = ts_embedder(tt, scaled_x, ts_mask) # 1-2) Time series Embedding -> (B,D,d_model)
+                
+                # Reshape for time series
+                B, D, L, d = ts_embedding.shape                     # (B, D, L, d)
+                ts_embedding = ts_embedding.reshape(B, D*L, d)      # (B, D * L, d)
+                ts_mask = ts_mask.reshape(B, D*L)                   # (B, D*L)
 
-            # 2) Convert text token id to text embedding vectors    
-            text_embedding = text_encoder(texts_batch, var_ids_batch, field_ids_batch, len(texts_batch), args.te_n_texts)
+                # 2) Convert text token id to text embedding vectors    
+                text_embedding = text_encoder(texts_batch, var_ids_batch, field_ids_batch, len(texts_batch), args.te_n_texts)
 
 
-            # 3) Cross modality aligning
-            aligned_embedding, cross_attn_weights = aligner(ts_embedding, text_embedding, ts_mask, need_weights=args.align_return_weights) # (B, D, d_model)
+                # 3) Cross modality aligning
+                aligned_embedding, cross_attn_weights = aligner(ts_embedding, text_embedding, ts_mask, need_weights=args.align_return_weights) # (B, D, d_model)
 
-            # 4) input the aligned embedding vector
-            outputs = model(inputs_embeds=aligned_embedding, attention_mask=ts_mask, labels=y) # Dict(loss, logits, pooled : [(B, d_model)])
-            
+                # 4) input the aligned embedding vector
+                outputs = model(inputs_embeds=aligned_embedding, attention_mask=ts_mask, labels=y) # Dict(loss, logits, pooled : [(B, d_model)])
+                
             running_infer_loss  += outputs['loss'].item()
             
             logits, gt = accelerator.gather_for_metrics((outputs['logits'], y))
@@ -391,7 +394,7 @@ def adaptation(args, data_loader, ckpt_dir, use_load=True):
     ts_embedder = DataEmbedding_ITS(d_model=model.hidden_size, n_var = args.n_time_cols, device=device, 
                                            dropout=args.ts_dropout, use_time=True, use_ts_pool=args.use_ts_pool).to(device)
     
-    text_encoder = TextEncoder(args, model, use_ln_out=True, device=device).to(device)
+    text_encoder = TextEncoder_v2(args, model, use_ln_out=True, device=device).to(device)
 
     aligner = ModalityAlignment(d_model=model.hidden_size, n_heads=args.align_n_heads, 
                                 dropout=args.align_dropout, use_gating=args.use_align_gate).to(device)
@@ -419,24 +422,25 @@ def adaptation(args, data_loader, ckpt_dir, use_load=True):
             tt, x, ts_mask, texts_batch, var_ids_batch, field_ids_batch, y, pids = batch
             tt, x, ts_mask, var_ids_batch, field_ids_batch, y = tt.to(device), x.to(device), ts_mask.to(device), var_ids_batch.to(device), field_ids_batch.to(device), y.to(device)
 
-            # 1) Time series Embedding 
-            scaled_x = scaler.transform_source(x, ts_mask)    # 1-1) Time series Scaling
-            ts_embedding = ts_embedder(tt, scaled_x, ts_mask) # 1-2) Time series Embedding -> (B,D, L_ts,d_model)
-            
-            # Reshape for time series
-            B, D, L, d = ts_embedding.shape                     # (B, D, L, d)
-            ts_embedding = ts_embedding.reshape(B, D*L, d)      # (B, D * L, d)
-            ts_mask = ts_mask.reshape(B, D*L)                   # (B, D*L)
+            with accelerator.autocast():   # <-- 이게 핵심
+                # 1) Time series Embedding 
+                scaled_x = scaler.transform_source(x, ts_mask)    # 1-1) Time series Scaling
+                ts_embedding = ts_embedder(tt, scaled_x, ts_mask) # 1-2) Time series Embedding -> (B,D, L_ts,d_model)
+                
+                # Reshape for time series
+                B, D, L, d = ts_embedding.shape                     # (B, D, L, d)
+                ts_embedding = ts_embedding.reshape(B, D*L, d)      # (B, D * L, d)
+                ts_mask = ts_mask.reshape(B, D*L)                   # (B, D*L)
 
-            # 2) Convert text token id to text embedding vectors    
-            text_embedding = text_encoder(texts_batch, var_ids_batch, field_ids_batch, len(texts_batch), args.te_n_texts) #(B, L_text, d_model)
+                # 2) Convert text token id to text embedding vectors    
+                text_embedding = text_encoder(texts_batch, var_ids_batch, field_ids_batch, len(texts_batch), args.te_n_texts) #(B, L_text, d_model)
 
-            # 3) Cross modality aligning
-            aligned_embedding, cross_attn_weights = aligner(ts_embedding, text_embedding, ts_mask, need_weights=args.align_return_weights) # (B, D*L, d_model)
+                # 3) Cross modality aligning
+                aligned_embedding, cross_attn_weights = aligner(ts_embedding, text_embedding, ts_mask, need_weights=args.align_return_weights) # (B, D*L, d_model)
 
-            # 4) input the aligned embedding vector
-            outputs = model(inputs_embeds=aligned_embedding, attention_mask=ts_mask, labels=y) # Dict(loss, logits, pooled : [(B, d_model)])
-            
+                # 4) input the aligned embedding vector
+                outputs = model(inputs_embeds=aligned_embedding, attention_mask=ts_mask, labels=y) # Dict(loss, logits, pooled : [(B, d_model)])
+                
             running_adapt_loss  += outputs['loss'].item()
             
             logits, gt = accelerator.gather_for_metrics((outputs['logits'], y))
