@@ -8,4 +8,4 @@ python main.py \
     --metrics_dir ./results/metrics/del_ffn \
     --te_n_vars 45 --te_n_fields 11 --te_n_texts 414 \
     --n_epochs 1 --lr 0.0005 --patience 5 \
-    --batch_size 16
+    --batch_size 8 --h_pool last

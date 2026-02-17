@@ -172,7 +172,7 @@ class CrossAttnBlock_v2(nn.Module):
                 text_key_padding_mask: Optional[torch.Tensor] = None, need_weights: bool = False) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
         """
         Args:
-          ts:  (B, M, d)
+          ts:  (B, M(=D*L), d)
           text:(B, N, d)
           ts_mask : (B, M) bool, Zero for positions to mask (padding)
           text_key_padding_mask: (B, N) bool, True for positions to mask (padding)
@@ -184,9 +184,9 @@ class CrossAttnBlock_v2(nn.Module):
         # ---- make broadcast mask ----
         if ts_mask is not None:
             if ts_mask.dim() == 2:            # (B, M)
-                q_valid = ts_mask.to(ts.dtype).unsqueeze(-1)   # (B, M, 1)
+                q_valid = ts_mask.unsqueeze(-1)   # (B, M, 1)
             elif ts_mask.dim() == 3:          # (B, M, 1) already
-                q_valid = ts_mask.to(ts.dtype)
+                q_valid = ts_mask
             else:
                 raise ValueError("ts_mask must be (B,M) or (B,M,1)")
         else:
