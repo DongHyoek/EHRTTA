@@ -66,12 +66,14 @@ class PEFTTSLLM(nn.Module):
     def _pool(self, last_hidden_state: torch.Tensor, attention_mask: Optional[torch.Tensor]) -> torch.Tensor:
         # last_hidden_state: (B, L, d_model)
         if self.args.h_pool == "last":
-            if attention_mask is None:
-                return last_hidden_state[:, -1, :]
+            return last_hidden_state[:, -1, :]
+        
+            # if attention_mask is None:
+            #     return last_hidden_state[:, -1, :]
             
-            # 마지막 유효 토큰 위치로 gather
-            lengths = attention_mask.long().sum(dim=1) - 1  # (B,)
-            return last_hidden_state[torch.arange(last_hidden_state.size(0), device=last_hidden_state.device), lengths]
+            # # 마지막 유효 토큰 위치로 gather
+            # lengths = attention_mask.long().sum(dim=1) - 1  # (B,)
+            # return last_hidden_state[torch.arange(last_hidden_state.size(0), device=last_hidden_state.device), lengths]
         
         elif self.args.h_pool == "mean":
             if attention_mask is None:

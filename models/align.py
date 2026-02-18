@@ -228,8 +228,13 @@ class ModalityAlignment(nn.Module):
 
         super(ModalityAlignment, self).__init__()
 
+        self.d_model = d_model
+
         self.block1 = CrossAttnBlock_v2(d_model, n_heads, d_ff, dropout, use_gating, gate_init)
         self.block2 = CrossAttnBlock_v2(d_model, n_heads, d_ff, dropout, use_gating, gate_init)
+        
+        # [Summary 토큰 추가]
+        self.sum_tok = nn.Parameter(torch.rand(1,1,d_model) * 0.02)
 
     def forward(self, ts: torch.Tensor, text: torch.Tensor, ts_mask: Optional[torch.Tensor] = None, 
                 text_key_padding_mask: Optional[torch.Tensor] = None, need_weights: bool = False) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
@@ -239,9 +244,15 @@ class ModalityAlignment(nn.Module):
 
         ts, w1 = self.block1(ts, text, ts_mask=ts_mask, text_key_padding_mask=text_key_padding_mask, need_weights=need_weights)
         ts, w2 = self.block2(ts, text, ts_mask=ts_mask, text_key_padding_mask=text_key_padding_mask, need_weights=need_weights)
+        
+        sum_tok = self.sum_tok.expand(ts.shape[0], 1, self.d_model)          # (B, 1, d)
+        ts_plus  = torch.cat([ts, sum_tok], 1)  # (B, T+1, d)
+
+        sum_tok_mask = torch.ones(ts_mask.shape[0], 1, device=ts_mask.device, dtype=ts_mask.dtype)
+        ts_mask_plus = torch.cat([ts_mask, sum_tok_mask], 1)  # (B, T+1)
 
         # return last weights (or you can return both)
-        return ts, w2 if need_weights else None
+        return ts_plus, ts_mask_plus, w2 if need_weights else None
 
 
 # -------------------------

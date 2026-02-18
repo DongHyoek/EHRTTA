@@ -26,7 +26,9 @@ def train(args, trn_loader, val_loader, ckpt_dir, use_load=False):
         accelerator = Accelerator(mixed_precision='bf16', cpu=True, log_with='wandb') # Adaptation, Evaluation mode
 
     accelerator.init_trackers(project_name="EHRTTA", config=vars(args), 
-                              init_kwargs={"wandb": {"name": f"{args.model_id}_{args.seed}_{args.task_label}_{args.data_source}", "tags": ["dora", "retain time series length", "use CLS token for text embeddings", "delete FFN blocks"]}})
+                              init_kwargs={"wandb": {"name": f"{args.model_id}_{args.seed}_{args.task_label}_{args.data_source}", 
+                                                     "tags": ["dora", "retain time series length", "use CLS token for text embeddings", 
+                                                              "delete FFN blocks", "1B model and add summary token"]}})
     global_step = 0
 
     device = accelerator.device
@@ -51,8 +53,8 @@ def train(args, trn_loader, val_loader, ckpt_dir, use_load=False):
     if args.scheduler:
         num_training_steps = len(trn_loader) * args.n_epochs
         scheduler = get_cosine_schedule_with_warmup(optimizer=optimizer, 
-                                                    # num_warmup_steps=int(num_training_steps * 0.03),
-                                                    num_warmup_steps=50, 
+                                                    num_warmup_steps=int(num_training_steps * 0.03),
+                                                    # num_warmup_steps=50, 
                                                     num_training_steps=num_training_steps)
         
         model, aligner, ts_embedder, text_encoder, optimizer, scheduler, trn_loader, val_loader  = accelerator.prepare(model, aligner, ts_embedder, text_encoder, optimizer, scheduler, trn_loader, val_loader)
@@ -103,21 +105,21 @@ def train(args, trn_loader, val_loader, ckpt_dir, use_load=False):
                 scaled_x = scaler.transform_source(x, ts_mask)    # 1-1) Time series Scaling
                 ts_embedding = ts_embedder(tt, scaled_x, ts_mask) # 1-2) Time series Embedding -> (B, D, L_ts,d_model) 
                 
-                torch.cuda.synchronize()
-                t0 = time.time()
+                # torch.cuda.synchronize()
+                # t0 = time.time()
 
                 # Reshape for time series
                 B, D, L, d = ts_embedding.shape                     # (B, D, L, d)
                 ts_embedding = ts_embedding.reshape(B, D*L, d)      # (B, D * L, d)
                 ts_mask = ts_mask.reshape(B, D*L)                   # (B, D*L)
-                    
+
                 # 2) Convert text token id to text embedding vectors    
                 text_embedding = text_encoder(texts_batch, var_ids_batch, field_ids_batch, x.shape[0], args.te_n_texts) # (B, L_text, d_model)
                 # torch.cuda.synchronize()
                 # t1 = time.time()
 
                 # 3) Cross modality aligning
-                aligned_embedding, cross_attn_weights = aligner(ts_embedding, text_embedding, ts_mask, need_weights=args.align_return_weights) # (B, D*L_ts, d_model)
+                aligned_embedding, ts_mask, cross_attn_weights = aligner(ts_embedding, text_embedding, ts_mask, need_weights=args.align_return_weights) # (B, D*L_ts, d_model)
                 # torch.cuda.synchronize()
                 # t2 = time.time()
 
@@ -184,7 +186,7 @@ def train(args, trn_loader, val_loader, ckpt_dir, use_load=False):
                     text_embedding = text_encoder(texts_batch, var_ids_batch, field_ids_batch, len(texts_batch), args.te_n_texts)
 
                     # 3) Cross modality aligning
-                    aligned_embedding, cross_attn_weights = aligner(ts_embedding, text_embedding, ts_mask, need_weights=args.align_return_weights) # (B, D, d_model)
+                    aligned_embedding, ts_mask, cross_attn_weights = aligner(ts_embedding, text_embedding, ts_mask, need_weights=args.align_return_weights) # (B, D, d_model)
 
                     # 4) input the aligned embedding vector
                     outputs = model(inputs_embeds=aligned_embedding, attention_mask=ts_mask, labels=y) # Dict(loss, logits, pooled : [(B, d_model)])
@@ -333,9 +335,8 @@ def inference(args, data_loader, ckpt_dir, use_load=True):
                 # 2) Convert text token id to text embedding vectors    
                 text_embedding = text_encoder(texts_batch, var_ids_batch, field_ids_batch, len(texts_batch), args.te_n_texts)
 
-
                 # 3) Cross modality aligning
-                aligned_embedding, cross_attn_weights = aligner(ts_embedding, text_embedding, ts_mask, need_weights=args.align_return_weights) # (B, D, d_model)
+                aligned_embedding, ts_mask, cross_attn_weights = aligner(ts_embedding, text_embedding, ts_mask, need_weights=args.align_return_weights) # (B, D, d_model)
 
                 # 4) input the aligned embedding vector
                 outputs = model(inputs_embeds=aligned_embedding, attention_mask=ts_mask, labels=y) # Dict(loss, logits, pooled : [(B, d_model)])
@@ -436,7 +437,7 @@ def adaptation(args, data_loader, ckpt_dir, use_load=True):
                 text_embedding = text_encoder(texts_batch, var_ids_batch, field_ids_batch, len(texts_batch), args.te_n_texts) #(B, L_text, d_model)
 
                 # 3) Cross modality aligning
-                aligned_embedding, cross_attn_weights = aligner(ts_embedding, text_embedding, ts_mask, need_weights=args.align_return_weights) # (B, D*L, d_model)
+                aligned_embedding, ts_mask, cross_attn_weights = aligner(ts_embedding, text_embedding, ts_mask, need_weights=args.align_return_weights) # (B, D*L, d_model)
 
                 # 4) input the aligned embedding vector
                 outputs = model(inputs_embeds=aligned_embedding, attention_mask=ts_mask, labels=y) # Dict(loss, logits, pooled : [(B, d_model)])
