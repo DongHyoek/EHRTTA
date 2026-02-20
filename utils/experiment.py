@@ -53,7 +53,7 @@ def train(args, trn_loader, val_loader, ckpt_dir, use_load=False):
     if args.scheduler:
         num_training_steps = len(trn_loader) * args.n_epochs
         scheduler = get_cosine_schedule_with_warmup(optimizer=optimizer, 
-                                                    num_warmup_steps=int(num_training_steps * 0.03),
+                                                    num_warmup_steps=int(num_training_steps * 0.01),
                                                     # num_warmup_steps=50, 
                                                     num_training_steps=num_training_steps)
         
@@ -153,8 +153,8 @@ def train(args, trn_loader, val_loader, ckpt_dir, use_load=False):
             if i % args.print_iter == 0 and i != 0:
                 accelerator.print(f'[Epoch : {epoch},  Iter : {(i + 1):03d} / {len(trn_loader):03d}] Running Loss {running_trn_loss / (i + 1):.3f}')
 
-            torch.save(cross_attn_weights.detach().cpu(), f'{ckpt_dir}/attn_weights_train_{i:04d}.pt')
-            torch.save(torch.tensor(pids), f'{ckpt_dir}/pids_train_{i:04d}.pt')
+            # torch.save(cross_attn_weights.detach().cpu(), f'{ckpt_dir}/attn_weights_train_{i:04d}.pt')
+            # torch.save(torch.tensor(pids), f'{ckpt_dir}/pids_train_{i:04d}.pt')
 
         # Evaluation 
         train_loss = running_trn_loss / len(trn_loader)
@@ -200,8 +200,8 @@ def train(args, trn_loader, val_loader, ckpt_dir, use_load=False):
                 else:
                     evaluator.update_regression(logits, gt)
 
-                # torch.save(cross_attn_weights.detach().cpu(), f'{ckpt_dir}/attn_weights_valid_{i:03d}.pt')
-                # torch.save(torch.tensor(pids), f'{ckpt_dir}/pids_valid_{i:03d}.pt')
+                torch.save(cross_attn_weights.detach().cpu(), f'{ckpt_dir}/attn_weights_valid_{i:03d}.pt')
+                torch.save(torch.tensor(pids), f'{ckpt_dir}/pids_valid_{i:03d}.pt')
 
             valid_loss = running_val_loss / len(val_loader)
             valid_metrics = evaluator.compute()

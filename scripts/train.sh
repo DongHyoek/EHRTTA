@@ -1,5 +1,6 @@
 
 export CUDA_LAUNCH_BLOCKING=1
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 python main.py \
     --use_time --use_norm_ema --align_return_weights --use_dora --cuda \
