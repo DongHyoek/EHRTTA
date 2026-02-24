@@ -28,7 +28,8 @@ def train(args, trn_loader, val_loader, ckpt_dir, use_load=False):
     accelerator.init_trackers(project_name="EHRTTA", config=vars(args), 
                               init_kwargs={"wandb": {"name": f"{args.model_id}_{args.seed}_{args.task_label}_{args.data_source}", 
                                                      "tags": ["dora", "retain time series length", "use CLS token for text embeddings", 
-                                                              "delete FFN blocks", "1B model and add summary token"]}})
+                                                              "delete FFN blocks", "1B model and add summary token", "reduce sequence length",
+                                                              "independent & aggregator"]}})
     global_step = 0
 
     device = accelerator.device
@@ -103,8 +104,7 @@ def train(args, trn_loader, val_loader, ckpt_dir, use_load=False):
             with accelerator.autocast():   # <-- 이게 핵심
                 # 1) Time series Embedding 
                 scaled_x = scaler.transform_source(x, ts_mask)    # 1-1) Time series Scaling
-                ts_embedding = ts_embedder(tt, scaled_x, ts_mask) # 1-2) Time series Embedding -> (B, D, L_ts,d_model) 
-                
+                ts_embedding = ts_embedder(tt, scaled_x, ts_mask) # 1-2) Time series Embedding -> (B, D, L_ts,d_model)                 
                 # torch.cuda.synchronize()
                 # t0 = time.time()
 
@@ -119,12 +119,17 @@ def train(args, trn_loader, val_loader, ckpt_dir, use_load=False):
                 # t1 = time.time()
 
                 # 3) Cross modality aligning
-                aligned_embedding, ts_mask, cross_attn_weights = aligner(ts_embedding, text_embedding, ts_mask, need_weights=args.align_return_weights) # (B, D*L_ts, d_model)
+                aligned_embedding, cross_attn_weights = aligner(ts_embedding, text_embedding, ts_mask, need_weights=args.align_return_weights) # (B, D*L_ts, d_model)
                 # torch.cuda.synchronize()
                 # t2 = time.time()
 
                 # 4) input the aligned embedding vector
-                outputs = model(inputs_embeds=aligned_embedding, attention_mask=ts_mask, labels=y) # Dict(loss, logits, pooled : [(B, d_model)])
+                aligned_embedding = aligned_embedding.reshape(B*D, L, d)      # (B, D * L, d) -> (B*D, L, d)
+                ts_mask = ts_mask.reshape(B*D, L)                             # (B, D*L)      -> (B*D, L)
+                var_idx_ts =  torch.arange(D, device=device).repeat(B)        # (B*D,)
+
+                outputs = model(inputs_embeds=aligned_embedding, attention_mask=ts_mask, labels=y, 
+                                var_idx_ts=var_idx_ts, num_ts=D) # Dict(loss, logits, pooled : [(B, d_model)])
                 loss = outputs['loss']
                 # torch.cuda.synchronize()
                 # t3 = time.time()
@@ -186,10 +191,14 @@ def train(args, trn_loader, val_loader, ckpt_dir, use_load=False):
                     text_embedding = text_encoder(texts_batch, var_ids_batch, field_ids_batch, len(texts_batch), args.te_n_texts)
 
                     # 3) Cross modality aligning
-                    aligned_embedding, ts_mask, cross_attn_weights = aligner(ts_embedding, text_embedding, ts_mask, need_weights=args.align_return_weights) # (B, D, d_model)
+                    aligned_embedding, cross_attn_weights = aligner(ts_embedding, text_embedding, ts_mask, need_weights=args.align_return_weights) # (B, D, d_model)
 
                     # 4) input the aligned embedding vector
-                    outputs = model(inputs_embeds=aligned_embedding, attention_mask=ts_mask, labels=y) # Dict(loss, logits, pooled : [(B, d_model)])
+                    aligned_embedding = aligned_embedding.reshape(B*D, L, d)      # (B, D * L, d) -> (B*D, L, d)
+                    ts_mask = ts_mask.reshape(B*D, L)                             # (B, D*L)      -> (B*D, L)
+                    var_idx_ts =  torch.arange(D, device=device).repeat(B)        # (B*D,)
+                    outputs = model(inputs_embeds=aligned_embedding, attention_mask=ts_mask, labels=y, 
+                                    var_idx_ts=var_idx_ts, num_ts=D) # Dict(loss, logits, pooled : [(B, d_model)])
                     
                 running_val_loss  += outputs['loss'].item()
                 
@@ -336,10 +345,14 @@ def inference(args, data_loader, ckpt_dir, use_load=True):
                 text_embedding = text_encoder(texts_batch, var_ids_batch, field_ids_batch, len(texts_batch), args.te_n_texts)
 
                 # 3) Cross modality aligning
-                aligned_embedding, ts_mask, cross_attn_weights = aligner(ts_embedding, text_embedding, ts_mask, need_weights=args.align_return_weights) # (B, D, d_model)
+                aligned_embedding, cross_attn_weights = aligner(ts_embedding, text_embedding, ts_mask, need_weights=args.align_return_weights) # (B, D, d_model)
 
                 # 4) input the aligned embedding vector
-                outputs = model(inputs_embeds=aligned_embedding, attention_mask=ts_mask, labels=y) # Dict(loss, logits, pooled : [(B, d_model)])
+                aligned_embedding = aligned_embedding.reshape(B*D, L, d)      # (B, D * L, d) -> (B*D, L, d)
+                ts_mask = ts_mask.reshape(B*D, L)                             # (B, D*L)      -> (B*D, L)
+                var_idx_ts =  torch.arange(D, device=device).repeat(B)        # (B*D,)
+                outputs = model(inputs_embeds=aligned_embedding, attention_mask=ts_mask, labels=y, 
+                                var_idx_ts=var_idx_ts, num_ts=D) # Dict(loss, logits, pooled : [(B, d_model)])
                 
             running_infer_loss  += outputs['loss'].item()
             
@@ -437,10 +450,14 @@ def adaptation(args, data_loader, ckpt_dir, use_load=True):
                 text_embedding = text_encoder(texts_batch, var_ids_batch, field_ids_batch, len(texts_batch), args.te_n_texts) #(B, L_text, d_model)
 
                 # 3) Cross modality aligning
-                aligned_embedding, ts_mask, cross_attn_weights = aligner(ts_embedding, text_embedding, ts_mask, need_weights=args.align_return_weights) # (B, D*L, d_model)
+                aligned_embedding, cross_attn_weights = aligner(ts_embedding, text_embedding, ts_mask, need_weights=args.align_return_weights) # (B, D*L, d_model)
 
                 # 4) input the aligned embedding vector
-                outputs = model(inputs_embeds=aligned_embedding, attention_mask=ts_mask, labels=y) # Dict(loss, logits, pooled : [(B, d_model)])
+                aligned_embedding = aligned_embedding.reshape(B*D, L, d)      # (B, D * L, d) -> (B*D, L, d)
+                ts_mask = ts_mask.reshape(B*D, L)                             # (B, D*L)      -> (B*D, L)
+                var_idx_ts =  torch.arange(D, device=device).repeat(B)        # (B*D,)
+                outputs = model(inputs_embeds=aligned_embedding, attention_mask=ts_mask, labels=y, 
+                                var_idx_ts=var_idx_ts, num_ts=D) # Dict(loss, logits, pooled : [(B, d_model)])
                 
             running_adapt_loss  += outputs['loss'].item()
             
@@ -490,6 +507,10 @@ def save_ckpt(ckpt_dir, ts_scaler, model, ts_embedder, text_encoder, aligner, op
         "ts_embedder_state": ts_embedder.state_dict(),
         "text_encoder_state": text_encoder.state_dict(),
         "aligner_state": aligner.state_dict(),
+        "summary_token_state" : model.sum_tok.state_dict(),
+        "tsvar_embedding_state" : model.tsvar_emb.state_dict(),
+        "cls_token_state" : model.cls.state_dict(),
+        "aggregator_state" : model.aggregator.state_dict(),
         "head_state": model.head.state_dict(), 
         "epoch": epoch,
         "best_val_loss": best_val_loss,
@@ -518,6 +539,10 @@ def load_misc_ckpt(ckpt_dir, model, ts_embedder, text_encoder, aligner, ts_scale
     ts_embedder.load_state_dict(misc["ts_embedder_state"], strict=strict)
     text_encoder.load_state_dict(misc["text_encoder_state"], strict=strict)
     aligner.load_state_dict(misc["aligner_state"], strict=strict)
+    model.sum_tok.load_state_dict(misc["summary_token_state"], strict=strict)
+    model.tsvar_emb.load_state_dict(misc["tsvar_embedding_state"], strict=strict)
+    model.cls.load_state_dict(misc["cls_token_state"], strict=strict)
+    model.aggregator.load_state_dict(misc["aggregator_state"], strict=strict)
     model.head.load_state_dict(misc["head_state"], strict=strict)
 
     if optimizer is not None and "optimizer_state" in misc:

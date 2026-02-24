@@ -74,7 +74,7 @@ class ISTS_EHR_Dataset(Dataset):
                 time_values = group_value[self.offset].to_numpy(dtype=np.float32)
                 x_values = group_value[self.args.val_col].to_numpy(dtype=np.float32)
 
-                # 최근 N개 제한(원하면)
+                # 최근 시점부터 N개만 활용하는 방법
                 if self.use_ts_trunc and len(time_values) > self.max_length:
                     time_values = time_values[-self.max_length:]
                     x_values = x_values[-self.max_length:]
@@ -632,7 +632,7 @@ class MappingData:
         source_itemid = []
         source_callback = []
         source_vars = [] # to map other lists
-        for var in tqdm(self.all_var_cols):
+        for var in self.all_var_cols:
 
             for i in range(len(self.metadata[var]['sources'][self.args.data_source])): # 여러 테이블에 분산되어 있는 경우 길이가 2가 넘을 수 있기 때문
 

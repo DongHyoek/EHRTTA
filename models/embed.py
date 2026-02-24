@@ -67,7 +67,6 @@ class TaskEmbedding(nn.Module):
         x = self.varible_emb(x.long())
         return x
 
-
 class ValueEmbedding(nn.Module):
     def __init__(self, c_in, d_model):
         super(ValueEmbedding, self).__init__()
@@ -76,7 +75,6 @@ class ValueEmbedding(nn.Module):
 
     def forward(self, x):
         return self.projection(x)
-    
 
 class TokenEmbedding(nn.Module):
     def __init__(self, c_in, d_model):
@@ -128,7 +126,8 @@ class DataEmbedding_ITS(nn.Module):
       mask : (B, D, L)  - 1=유효(관측), 0=pad
 
     출력:
-      out  : (B, D, d_model)  - 변수별로 pooling된 표현
+      out  : (B, D, L, d_model)  - pooling되지 않은 표현
+      out  : (B, D, d_model)     - pooling된 표현
     """
     def __init__(self, d_model: int, n_var: int, device = None, dropout: float = 0.1, use_time: bool = True, use_ts_pool: bool = False):
         super().__init__()
@@ -322,8 +321,7 @@ class TextEncoder_v2(nn.Module):
     -> output CLS vector per text item
     -> reshape (B, N_text, d_model)
     """
-    def __init__(self, args, model, use_ln_out: bool = True, # max_position=256,
-                 tag_init_std: float = 0.02, tag_scale_init: float = 1.0, device='cpu'):
+    def __init__(self, args, model, use_ln_out: bool = True, device='cpu'):
         
         super(TextEncoder_v2, self).__init__()
 
@@ -340,24 +338,20 @@ class TextEncoder_v2(nn.Module):
         self.d_model = self.embed.embedding_dim
 
         # shared CLS seed
-        self.cls_shared = nn.Parameter(torch.zeros(1, 1, self.d_model))
-        nn.init.normal_(self.cls_shared, mean=0.0, std=tag_init_std)
+        self.cls_shared = nn.Parameter(torch.empty(1, 1, self.d_model))
+        nn.init.normal_(self.cls_shared, mean=0.0, std=0.02)
 
         # conditional tags
         self.var_tag = nn.Embedding(args.te_n_vars, self.d_model)     # e.g., 41 labs + 4 demos = 45
         self.field_tag = nn.Embedding(args.te_n_fields, self.d_model) # e.g., 10 lab fields + 4 demo fields = 14
-        nn.init.normal_(self.var_tag.weight, mean=0.0, std=tag_init_std)
-        nn.init.normal_(self.field_tag.weight, mean=0.0, std=tag_init_std)
+        nn.init.normal_(self.var_tag.weight, mean=0.0, std=0.02)
+        nn.init.normal_(self.field_tag.weight, mean=0.0, std=0.02)
 
-        # optional: learnable scale to keep conditioning stable
-        self.tag_scale = nn.Parameter(torch.tensor(float(tag_scale_init)))
+        # # optional: learnable scale to keep conditioning stable
+        # self.tag_scale = nn.Parameter(torch.tensor(float(tag_scale_init)))
 
-        self.te_attn = nn.MultiheadAttention(
-            embed_dim=self.d_model,
-            num_heads=args.te_n_heads,
-            dropout=args.te_dropout,
-            batch_first=True
-            )
+        self.te_attn = nn.MultiheadAttention(embed_dim=self.d_model, num_heads=args.te_n_heads, 
+                                             dropout=args.te_dropout, batch_first=True)
 
     @torch.no_grad()
     def _tokenize(self, texts) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -392,7 +386,8 @@ class TextEncoder_v2(nn.Module):
 
         # conditional CLS: (T, 1, D)
         cls = self.cls_shared.expand(T, 1, self.d_model)  # (T,1,D)
-        cls = cls + self.tag_scale * (self.var_tag(var_ids).unsqueeze(1) + self.field_tag(field_ids).unsqueeze(1))
+        # cls = cls + self.tag_scale * (self.var_tag(var_ids).unsqueeze(1) + self.field_tag(field_ids).unsqueeze(1))
+        cls = cls + self.var_tag(var_ids).unsqueeze(1) + self.field_tag(field_ids).unsqueeze(1)
 
         x = torch.cat([cls, text_embedding], dim=1)     # (T, 1+L, D)
 

@@ -19,6 +19,7 @@ class PEFTTSLLM(nn.Module):
         super().__init__()
         
         self.args = args
+        self.device = device
 
         self.hf_config = AutoConfig.from_pretrained(args.model_id)
 
@@ -55,7 +56,19 @@ class PEFTTSLLM(nn.Module):
 
         self.hidden_size = self.hf_config.hidden_size
 
-        # 4) 다운스트림 head
+        # [Summary 토큰 추가]
+        self.sum_tok = nn.Parameter(torch.empty(1, 1, self.hidden_size))
+        nn.init.normal_(self.sum_tok, mean=0.0, std=0.02)
+        self.tsvar_emb = nn.Embedding(args.te_n_vars, self.hidden_size)     # e.g. Time series (= Vital IDs)
+
+        # Variable-wise aggregation module (self_attention)
+        self.cls = nn.Parameter(torch.empty(1, 1, self.hidden_size))
+        nn.init.normal_(self.cls, mean=0.0, std=0.02)
+
+        enc_layer = nn.TransformerEncoderLayer(d_model=self.hidden_size, nhead=args.agg_n_heads, dim_feedforward=2*self.hidden_size, batch_first=True)
+        self.aggregator = nn.TransformerEncoder(encoder_layer=enc_layer, num_layers=args.agg_layers)
+
+        # 4) downstream head
         if args.task == "classification":
             self.head = nn.Linear(self.hidden_size, args.num_labels)
         elif args.task == "regression":
@@ -84,23 +97,41 @@ class PEFTTSLLM(nn.Module):
         else:
             raise ValueError("pooling must be 'last' or 'mean'")
 
-    def forward(self, inputs_embeds: Optional[torch.Tensor] = None, labels: Optional[torch.Tensor] = None, attention_mask: Optional[torch.Tensor] = None) -> Dict[str, Any]:
+    def forward(self, inputs_embeds: Optional[torch.Tensor] = None, attention_mask: Optional[torch.Tensor] = None,
+                labels: Optional[torch.Tensor] = None, var_idx_ts: Optional[torch.tensor] = None, num_ts: int = 7) -> Dict[str, Any]:
         """
         inputs_embeds(이미 임베딩된 벡터 = aligned)를 input으로 넣어줌.
         transformers AutoModel은 inputs_embeds를 지원함. :contentReference[oaicite:4]{index=4}
         """
 
+        ## Add summarize tokens with variable embedding 
+        sum_tok = self.sum_tok.expand(inputs_embeds.shape[0], 1, self.hidden_size)      # (B*D, 1, d)
+        sum_tok = sum_tok + self.tsvar_emb(var_idx_ts).unsqueeze(1)                     # (B*D, 1, d)
+        inputs_embeds  = torch.cat([inputs_embeds, sum_tok], 1)                         # (B*D, L+1, d)
+
+        sum_tok_mask = torch.ones(attention_mask.shape[0], 1, device=self.device, dtype=attention_mask.dtype)
+        attention_mask = torch.cat([attention_mask, sum_tok_mask], 1)  # (B*D, L+1)
+        
+        ## LLM forward
         if not self.args.adapt_mode: # source train mode
             outputs = self.backbone(inputs_embeds=inputs_embeds, attention_mask=attention_mask, return_dict=True)
 
         else: # target adaptation mode
             outputs = self.backbone_w_tta(inputs_embeds=inputs_embeds, attention_mask=attention_mask, return_dict=True)
             
-        h = outputs.last_hidden_state  # (B, L, d_model)
+        h = outputs.last_hidden_state  # (B*D, L+1, d_model)
 
-        pooled = self._pool(h, attention_mask)  # (B, d_model)
-        logits = self.head(pooled)              # (B, C) or (B, 1)
+        pooled = self._pool(h, attention_mask)  # (B*D, d_model)
 
+        ## Aggregation with self-attention
+        pooled = pooled.reshape(-1, num_ts, self.hidden_size)        # (B, D, d_model)
+        cls = self.cls.expand(pooled.shape[0], 1, self.hidden_size)  # (B, 1, d_model)
+        pooled = torch.cat([cls, pooled], dim=1)                     # (B, 1+D, d_model)
+        
+        out = self.aggregator(pooled) # (B, 1+D, d_model)
+        out = out[:,0,:]              # (B, d_model)
+        logits = self.head(out)       # (B, C) or (B, 1)
+        
         if self.args.task == "classification":
             loss = F.cross_entropy(logits, labels.long())
         else:

@@ -65,6 +65,10 @@ def build_parser():
                         help='the pooling method of vectors in time series embedding modules')
     parser.add_argument("--text_pad_type", type=str, default='longest',
                         help="padding type of text data")
+    parser.add_argument("--agg_layers", type=int, default=2,
+                        help="the number of layers for aggregator")
+    parser.add_argument("--agg_n_heads", type=str, default=8,
+                        help="the number of heads for aggregator")
 
     # TTA methods details
     parser.add_argument('--statsmode', type=str, default='aggregate',
@@ -137,13 +141,13 @@ def build_parser():
                         help='the name of offset column')
     parser.add_argument('--unit_col', type=str, default='fixed_unit',
                         help='the name of offset column')
-    parser.add_argument("--train_ratio", default=0.8, type=float,
+    parser.add_argument("--train_ratio", default=0.75, type=float,
                         help="train split ratio (0. <= x <= 1.).")
-    parser.add_argument("--val_ratio", default=0.1, type=float,
+    parser.add_argument("--val_ratio", default=0.15, type=float,
                         help="validation split ratio (0. <= x <= 1.).")
     parser.add_argument("--use_ts_trunc", default=False, action='store_true',
                         help="option for using time series truncation")
-    parser.add_argument("--max_length", default=1000, type=float,
+    parser.add_argument("--max_length", default=100, type=int,
                         help="max sequence length of time series")
     parser.add_argument("--num_workers", default=0, type=int,
                         help="Number of workers preprocessing the data.")
