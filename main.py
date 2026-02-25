@@ -65,7 +65,7 @@ def build_parser():
                         help='the pooling method of vectors in time series embedding modules')
     parser.add_argument("--text_pad_type", type=str, default='longest',
                         help="padding type of text data")
-    parser.add_argument("--agg_layers", type=int, default=2,
+    parser.add_argument("--agg_n_layers", type=int, default=2,
                         help="the number of layers for aggregator")
     parser.add_argument("--agg_n_heads", type=str, default=8,
                         help="the number of heads for aggregator")

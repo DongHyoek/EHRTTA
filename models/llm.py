@@ -66,7 +66,7 @@ class PEFTTSLLM(nn.Module):
         nn.init.normal_(self.cls, mean=0.0, std=0.02)
 
         enc_layer = nn.TransformerEncoderLayer(d_model=self.hidden_size, nhead=args.agg_n_heads, dim_feedforward=2*self.hidden_size, batch_first=True)
-        self.aggregator = nn.TransformerEncoder(encoder_layer=enc_layer, num_layers=args.agg_layers)
+        self.aggregator = nn.TransformerEncoder(encoder_layer=enc_layer, num_layers=args.agg_n_layers)
 
         # 4) downstream head
         if args.task == "classification":

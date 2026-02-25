@@ -31,9 +31,9 @@ def train(args, trn_loader, val_loader, ckpt_dir, use_load=False):
                                                               "delete FFN blocks", "1B model and add summary token", "reduce sequence length",
                                                               "independent & aggregator"]}})
     global_step = 0
+    patience = 0
 
     device = accelerator.device
-    patience = 0
     
     # Define the scaler
     scaler = TSScaler(args)
@@ -188,7 +188,7 @@ def train(args, trn_loader, val_loader, ckpt_dir, use_load=False):
                     ts_mask = ts_mask.reshape(B, D*L)                   # (B, D*L)
 
                     # 2) Convert text token id to text embedding vectors    
-                    text_embedding = text_encoder(texts_batch, var_ids_batch, field_ids_batch, len(texts_batch), args.te_n_texts)
+                    text_embedding = text_encoder(texts_batch, var_ids_batch, field_ids_batch, x.shape[0], args.te_n_texts)
 
                     # 3) Cross modality aligning
                     aligned_embedding, cross_attn_weights = aligner(ts_embedding, text_embedding, ts_mask, need_weights=args.align_return_weights) # (B, D, d_model)
@@ -268,7 +268,6 @@ def train(args, trn_loader, val_loader, ckpt_dir, use_load=False):
             save_ckpt(ckpt_dir, ts_scaler=scaler, model=model, ts_embedder=ts_embedder, text_encoder=text_encoder, aligner=aligner, 
                       optimizer=optimizer, scheduler=scheduler, epoch=epoch, best_val_loss=best_val_loss, args=args)
             
-
         else:
             patience += 1
             
@@ -276,6 +275,8 @@ def train(args, trn_loader, val_loader, ckpt_dir, use_load=False):
                 if args.patience == patience:
                     print('==== Early Stopping ====')
                     break
+                else:
+                    print(f'==== Early Stopping Patience {patience:02d} / {args.patience:02d} ')
 
     accelerator.end_training()
     print(f'==========[Finish]==========')
@@ -342,7 +343,7 @@ def inference(args, data_loader, ckpt_dir, use_load=True):
                 ts_mask = ts_mask.reshape(B, D*L)                   # (B, D*L)
 
                 # 2) Convert text token id to text embedding vectors    
-                text_embedding = text_encoder(texts_batch, var_ids_batch, field_ids_batch, len(texts_batch), args.te_n_texts)
+                text_embedding = text_encoder(texts_batch, var_ids_batch, field_ids_batch, x.shape[0], args.te_n_texts)
 
                 # 3) Cross modality aligning
                 aligned_embedding, cross_attn_weights = aligner(ts_embedding, text_embedding, ts_mask, need_weights=args.align_return_weights) # (B, D, d_model)
@@ -447,7 +448,7 @@ def adaptation(args, data_loader, ckpt_dir, use_load=True):
                 ts_mask = ts_mask.reshape(B, D*L)                   # (B, D*L)
 
                 # 2) Convert text token id to text embedding vectors    
-                text_embedding = text_encoder(texts_batch, var_ids_batch, field_ids_batch, len(texts_batch), args.te_n_texts) #(B, L_text, d_model)
+                text_embedding = text_encoder(texts_batch, var_ids_batch, field_ids_batch, x.shape[0], args.te_n_texts) #(B, L_text, d_model)
 
                 # 3) Cross modality aligning
                 aligned_embedding, cross_attn_weights = aligner(ts_embedding, text_embedding, ts_mask, need_weights=args.align_return_weights) # (B, D*L, d_model)
