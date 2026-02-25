@@ -173,7 +173,6 @@ def train(args, trn_loader, val_loader, ckpt_dir, use_load=False):
             text_encoder.eval()
 
             for i, batch in enumerate(tqdm(val_loader, desc='Source Validation', total=len(val_loader))):
-                            
                 tt, x, ts_mask, texts_batch, var_ids_batch, field_ids_batch, y, pids = batch
                 tt, x, ts_mask, var_ids_batch, field_ids_batch, y = tt.to(device), x.to(device), ts_mask.to(device), var_ids_batch.to(device), field_ids_batch.to(device), y.to(device)
 
@@ -508,9 +507,9 @@ def save_ckpt(ckpt_dir, ts_scaler, model, ts_embedder, text_encoder, aligner, op
         "ts_embedder_state": ts_embedder.state_dict(),
         "text_encoder_state": text_encoder.state_dict(),
         "aligner_state": aligner.state_dict(),
-        "summary_token_state" : model.sum_tok.state_dict(),
+        "summary_token_state" : model.sum_tok.detach().cpu(),
         "tsvar_embedding_state" : model.tsvar_emb.state_dict(),
-        "cls_token_state" : model.cls.state_dict(),
+        "cls_token_state" : model.cls.detach().cpu(),
         "aggregator_state" : model.aggregator.state_dict(),
         "head_state": model.head.state_dict(), 
         "epoch": epoch,
@@ -540,11 +539,13 @@ def load_misc_ckpt(ckpt_dir, model, ts_embedder, text_encoder, aligner, ts_scale
     ts_embedder.load_state_dict(misc["ts_embedder_state"], strict=strict)
     text_encoder.load_state_dict(misc["text_encoder_state"], strict=strict)
     aligner.load_state_dict(misc["aligner_state"], strict=strict)
-    model.sum_tok.load_state_dict(misc["summary_token_state"], strict=strict)
     model.tsvar_emb.load_state_dict(misc["tsvar_embedding_state"], strict=strict)
-    model.cls.load_state_dict(misc["cls_token_state"], strict=strict)
     model.aggregator.load_state_dict(misc["aggregator_state"], strict=strict)
     model.head.load_state_dict(misc["head_state"], strict=strict)
+
+    with torch.no_grad():
+        model.sum_tok.copy_(misc["summary_token_state"].to(device))
+        model.cls.copy_(misc["cls_token_state"].to(device))
 
     if optimizer is not None and "optimizer_state" in misc:
         optimizer.load_state_dict(misc["optimizer_state"])
