@@ -57,10 +57,11 @@ class PEFTTSLLM(nn.Module):
         self.hidden_size = self.hf_config.hidden_size
 
         # [Summary 토큰 추가]
-        self.sum_tok = nn.Parameter(torch.empty(1, 1, self.hidden_size))
-        nn.init.normal_(self.sum_tok, mean=0.0, std=0.02)
-        self.tsvar_emb = nn.Embedding(args.te_n_vars, self.hidden_size)     # e.g. Time series (= Vital IDs)
-
+        if args.h_pool == "last":
+            self.sum_tok = nn.Parameter(torch.empty(1, 1, self.hidden_size))
+            nn.init.normal_(self.sum_tok, mean=0.0, std=0.02)
+            self.tsvar_emb = nn.Embedding(args.te_n_vars, self.hidden_size)     # e.g. Time series (= Vital IDs)
+        
         # Variable-wise aggregation module (self_attention)
         self.cls = nn.Parameter(torch.empty(1, 1, self.hidden_size))
         nn.init.normal_(self.cls, mean=0.0, std=0.02)
@@ -105,12 +106,13 @@ class PEFTTSLLM(nn.Module):
         """
 
         ## Add summarize tokens with variable embedding 
-        sum_tok = self.sum_tok.expand(inputs_embeds.shape[0], 1, self.hidden_size)      # (B*D, 1, d)
-        sum_tok = sum_tok + self.tsvar_emb(var_idx_ts).unsqueeze(1)                     # (B*D, 1, d)
-        inputs_embeds  = torch.cat([inputs_embeds, sum_tok], 1)                         # (B*D, L+1, d)
+        if self.args.h_pool == 'last':
+            sum_tok = self.sum_tok.expand(inputs_embeds.shape[0], 1, self.hidden_size)      # (B*D, 1, d)
+            sum_tok = sum_tok + self.tsvar_emb(var_idx_ts).unsqueeze(1)                     # (B*D, 1, d)
+            inputs_embeds  = torch.cat([inputs_embeds, sum_tok], 1)                         # (B*D, L+1, d)
 
-        sum_tok_mask = torch.ones(attention_mask.shape[0], 1, device=self.device, dtype=attention_mask.dtype)
-        attention_mask = torch.cat([attention_mask, sum_tok_mask], 1)  # (B*D, L+1)
+            sum_tok_mask = torch.ones(attention_mask.shape[0], 1, device=self.device, dtype=attention_mask.dtype)
+            attention_mask = torch.cat([attention_mask, sum_tok_mask], 1)  # (B*D, L+1)
         
         ## LLM forward
         if not self.args.adapt_mode: # source train mode

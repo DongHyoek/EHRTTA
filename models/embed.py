@@ -339,13 +339,36 @@ class TextEncoder_v2(nn.Module):
 
         # shared CLS seed
         self.cls_shared = nn.Parameter(torch.empty(1, 1, self.d_model))
-        nn.init.normal_(self.cls_shared, mean=0.0, std=0.02)
+        
+        if args.te_cls_init == 'raw_tok':
+            with torch.no_grad():
+                sum_tok_id, _ = self._tokenize('Summary')
+                if len(sum_tok_id) >= 2:
+                    sum_init_vec = self.embed.weight[sum_tok_id[-1]]         # (D,)
+                self.cls_shared.copy_(sum_init_vec.view(1,1,-1))             # (1,1,D)
+        else:
+            nn.init.normal_(self.cls_shared, mean=0.0, std=0.02)
 
         # conditional tags
         self.var_tag = nn.Embedding(args.te_n_vars, self.d_model)     # e.g., 41 labs + 4 demos = 45
         self.field_tag = nn.Embedding(args.te_n_fields, self.d_model) # e.g., 10 lab fields + 4 demo fields = 14
-        nn.init.normal_(self.var_tag.weight, mean=0.0, std=0.02)
-        nn.init.normal_(self.field_tag.weight, mean=0.0, std=0.02)
+
+        if args.te_cls_init == 'raw_tok':
+            with torch.no_grad():
+                # initialize to variable tag
+                var_tok_id, _ = self._tokenize('Variable')
+                if len(var_tok_id) >= 2:
+                    var_init_vec = self.embed.weight[var_tok_id[-1]]         
+                self.var_tag.copy_(var_init_vec.view(1,1,-1))    
+
+                # initialize to 
+                field_tag_id, _ = self._tokenize('Characteristic')
+                if len(field_tag_id) >= 2:
+                    field_init_vec = self.embed.weight[field_tag_id[-1]]         
+                self.field_tag.copy_(field_init_vec.view(1,1,-1))    
+        else:
+            nn.init.normal_(self.var_tag.weight, mean=0.0, std=0.02)
+            nn.init.normal_(self.field_tag.weight, mean=0.0, std=0.02)
 
         # # optional: learnable scale to keep conditioning stable
         # self.tag_scale = nn.Parameter(torch.tensor(float(tag_scale_init)))

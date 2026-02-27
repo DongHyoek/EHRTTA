@@ -25,6 +25,8 @@ def build_parser():
                         help='use normalization with ema')
     parser.add_argument('--norm_ema_alpha', type=float, default=0.1,
                         help='define the alpha value for ema')
+    parser.add_argument('--te_cls_init', type=str, default='raw_tok',
+                        help='the initialization method of cls token for text encoding modules')
     parser.add_argument('--te_n_layers', type=int, default=1,
                         help='the number of layers for text encoding attention')
     parser.add_argument('--te_n_heads', type=int, default=8,

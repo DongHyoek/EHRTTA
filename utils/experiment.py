@@ -29,7 +29,7 @@ def train(args, trn_loader, val_loader, ckpt_dir, use_load=False):
                               init_kwargs={"wandb": {"name": f"{args.model_id}_{args.seed}_{args.task_label}_{args.data_source}", 
                                                      "tags": ["dora", "retain time series length", "use CLS token for text embeddings", 
                                                               "delete FFN blocks", "1B model and add summary token", "reduce sequence length",
-                                                              "independent & aggregator"]}})
+                                                              "independent & aggregator", "change text encoder learnable param initalization"]}})
     global_step = 0
     patience = 0
 
@@ -224,7 +224,7 @@ def train(args, trn_loader, val_loader, ckpt_dir, use_load=False):
         accelerator.print({'epoch' : epoch, **valid_metrics})
 
         if args.task == 'classification':
-            result = {
+            result= {
                     "Epoch": epoch,
                     "Train/epoch_loss": train_loss,
                     "Valid/epoch_loss": valid_loss,
@@ -234,17 +234,17 @@ def train(args, trn_loader, val_loader, ckpt_dir, use_load=False):
                     "Valid/precision" : valid_metrics['precision'],
                     "Valid/recall" : valid_metrics['recall'],
                     "Valid/accuracy" : valid_metrics["accuracy"],
-                    "Valid/confusion_metrix" : valid_metrics["confusion_matrix"],
+                    "Valid/confusion_metrix" : valid_metrics["confusion_matrix"].tolist(),
                     "Train/auroc": train_metrics["auroc"],
                     "Train/auprc": train_metrics["auprc"],
                     "Train/f1" : train_metrics['f1'],
                     "Train/precision" : train_metrics['precision'],
                     "Train/recall" : train_metrics['recall'],
                     "Train/accuracy" : train_metrics["accuracy"],
-                    "Train/confusion_metrix" : train_metrics["confusion_matrix"]
+                    "Train/confusion_metrix" : train_metrics["confusion_matrix"].tolist()
                     }
             
-            accelerator.log(result, step=global_step)
+            accelerator.log(result, step=epoch)
 
         else:
             result = {
@@ -259,7 +259,7 @@ def train(args, trn_loader, val_loader, ckpt_dir, use_load=False):
                     "Train/mape" : train_metrics["mape"]
                     }
             
-            accelerator.log(result, step=global_step)
+            accelerator.log(result, step=epoch)
 
         if best_val_loss > valid_loss:
             print(f'====[Epoch {epoch}/{args.n_epochs}] | Best Valid Loss update {best_val_loss:.3f} ==> {valid_loss:3f} ====')
@@ -363,6 +363,9 @@ def inference(args, data_loader, ckpt_dir, use_load=True):
             else:
                 evaluator.update_regression(logits, gt)
 
+            torch.save(text_embedding.detach().cpu(), f'{ckpt_dir}/text_embedding_{i:03d}.pt')
+            torch.save(torch.tensor(pids), f'{ckpt_dir}/pids_text_{i:03d}.pt')
+
         infer_loss = running_infer_loss / len(data_loader)
         infer_metrics = evaluator.compute()
         
@@ -382,7 +385,7 @@ def inference(args, data_loader, ckpt_dir, use_load=True):
                     "Inference/precision" : infer_metrics['precision'],
                     "Inference/recall" : infer_metrics['recall'],
                     "Inference/accuracy" : infer_metrics["accuracy"],
-                    "Inference/confusion_metrix" : infer_metrics["confusion_matrix"],
+                    "Inference/confusion_metrix" : infer_metrics["confusion_matrix"].tolist(),
                     }
         else:
             return {
@@ -487,7 +490,7 @@ def adaptation(args, data_loader, ckpt_dir, use_load=True):
                     "Adaptation/precision" : adapt_metrics['precision'],
                     "Adaptation/recall" : adapt_metrics['recall'],
                     "Adaptation/accuracy" : adapt_metrics["accuracy"],
-                    "Adaptation/confusion_metrix" : adapt_metrics["confusion_matrix"],
+                    "Adaptation/confusion_metrix" : adapt_metrics["confusion_matrix"].tolist(),
                     }
         else:
             return {
@@ -507,7 +510,7 @@ def save_ckpt(ckpt_dir, ts_scaler, model, ts_embedder, text_encoder, aligner, op
         "ts_embedder_state": ts_embedder.state_dict(),
         "text_encoder_state": text_encoder.state_dict(),
         "aligner_state": aligner.state_dict(),
-        "summary_token_state" : model.sum_tok.detach().cpu(),
+        "summary_token_state" : model.sum_tok.detach().cpu() if args.h_pool=='last' else None,
         "tsvar_embedding_state" : model.tsvar_emb.state_dict(),
         "cls_token_state" : model.cls.detach().cpu(),
         "aggregator_state" : model.aggregator.state_dict(),
@@ -544,7 +547,8 @@ def load_misc_ckpt(ckpt_dir, model, ts_embedder, text_encoder, aligner, ts_scale
     model.head.load_state_dict(misc["head_state"], strict=strict)
 
     with torch.no_grad():
-        model.sum_tok.copy_(misc["summary_token_state"].to(device))
+        if misc['summary_token_state'] is not None:
+            model.sum_tok.copy_(misc["summary_token_state"].to(device))
         model.cls.copy_(misc["cls_token_state"].to(device))
 
     if optimizer is not None and "optimizer_state" in misc:
