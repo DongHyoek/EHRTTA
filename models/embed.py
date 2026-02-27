@@ -351,9 +351,10 @@ class TextEncoder_v2(nn.Module):
         # conditional tags
         self.var_tag = nn.Embedding(args.te_n_vars, self.d_model)     # e.g., 41 labs + 4 demos = 45
         self.field_tag = nn.Embedding(args.te_n_fields, self.d_model) # e.g., 10 lab fields + 4 demo fields = 14
+        
         nn.init.normal_(self.var_tag.weight, mean=0.0, std=0.02)
         nn.init.normal_(self.field_tag.weight, mean=0.0, std=0.02)
-        
+
         # if args.te_cls_init == 'raw_tok':
         #     with torch.no_grad():
         #         # initialize to variable tag
