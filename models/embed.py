@@ -343,8 +343,7 @@ class TextEncoder_v2(nn.Module):
         if args.te_cls_init == 'raw_tok':
             with torch.no_grad():
                 sum_tok_id, _ = self._tokenize('Summary')
-                if len(sum_tok_id) >= 2:
-                    sum_init_vec = self.embed.weight[sum_tok_id[-1]]         # (D,)
+                sum_init_vec = self.embed.weight[sum_tok_id[-1]]         # (D,)
                 self.cls_shared.copy_(sum_init_vec.view(1,1,-1))             # (1,1,D)
         else:
             nn.init.normal_(self.cls_shared, mean=0.0, std=0.02)
@@ -357,14 +356,12 @@ class TextEncoder_v2(nn.Module):
             with torch.no_grad():
                 # initialize to variable tag
                 var_tok_id, _ = self._tokenize('Variable')
-                if len(var_tok_id) >= 2:
-                    var_init_vec = self.embed.weight[var_tok_id[-1]]         
+                var_init_vec = self.embed.weight[var_tok_id[-1]]         
                 self.var_tag.copy_(var_init_vec.view(1,1,-1))    
 
                 # initialize to 
                 field_tag_id, _ = self._tokenize('Characteristic')
-                if len(field_tag_id) >= 2:
-                    field_init_vec = self.embed.weight[field_tag_id[-1]]         
+                field_init_vec = self.embed.weight[field_tag_id[-1]]         
                 self.field_tag.copy_(field_init_vec.view(1,1,-1))    
         else:
             nn.init.normal_(self.var_tag.weight, mean=0.0, std=0.02)
