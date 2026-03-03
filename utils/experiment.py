@@ -70,7 +70,6 @@ def train(args, trn_loader, val_loader, ckpt_dir, use_load=False):
     for i, batch in enumerate(tqdm(trn_loader, desc='Initialize for the normalization')):
         _, x, mask, _, _, _, _, _ = batch
         scaler.update_source(x, mask)
-        break
 
     source_state = scaler.finalize_source()
     
