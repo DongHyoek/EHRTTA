@@ -348,12 +348,13 @@ class TextEncoder_v2(nn.Module):
         else:
             nn.init.normal_(self.cls_shared, mean=0.0, std=0.02)
 
-        # conditional tags
-        self.var_tag = nn.Embedding(args.te_n_vars, self.d_model)     # e.g., 41 labs + 4 demos = 45
-        self.field_tag = nn.Embedding(args.te_n_fields, self.d_model) # e.g., 10 lab fields + 4 demo fields = 14
-        
-        nn.init.normal_(self.var_tag.weight, mean=0.0, std=0.02)
-        nn.init.normal_(self.field_tag.weight, mean=0.0, std=0.02)
+        if args.te_id_mix:
+            # conditional tags
+            self.var_tag = nn.Embedding(args.te_n_vars, self.d_model)     # e.g., 41 labs + 4 demos = 45
+            self.field_tag = nn.Embedding(args.te_n_fields, self.d_model) # e.g., 10 lab fields + 4 demo fields = 14
+
+            nn.init.normal_(self.var_tag.weight, mean=0.0, std=0.02)
+            nn.init.normal_(self.field_tag.weight, mean=0.0, std=0.02)
 
         # if args.te_cls_init == 'raw_tok':
         #     with torch.no_grad():
@@ -410,7 +411,9 @@ class TextEncoder_v2(nn.Module):
         # conditional CLS: (T, 1, D)
         cls = self.cls_shared.expand(T, 1, self.d_model)  # (T,1,D)
         # cls = cls + self.tag_scale * (self.var_tag(var_ids).unsqueeze(1) + self.field_tag(field_ids).unsqueeze(1))
-        cls = cls + self.var_tag(var_ids).unsqueeze(1) + self.field_tag(field_ids).unsqueeze(1)
+
+        if self.args.te_id_mix:
+            cls = cls + self.var_tag(var_ids).unsqueeze(1) + self.field_tag(field_ids).unsqueeze(1) # adding each id embeddings
 
         x = torch.cat([cls, text_embedding], dim=1)     # (T, 1+L, D)
 

@@ -33,6 +33,8 @@ def build_parser():
                         help='the number of heads for text encoding attention')
     parser.add_argument('--te_dropout', type=float, default=0.0,
                         help='the dropout rate of text encoding modules')
+    parser.add_argument('--te_id_mix', default=False, action='store_true',
+                        help='the option of adding variable id embedding and fied id embedding')
     parser.add_argument('--te_n_vars', type=int, default=45,
                         help='the number of demographic, lab, output vars')
     parser.add_argument('--te_n_fields', type=int, default=11,

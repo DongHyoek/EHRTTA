@@ -10,7 +10,7 @@ from torch.utils.data import Dataset, DataLoader
 from transformers import AutoConfig, AutoTokenizer, AutoModel, get_cosine_schedule_with_warmup
 from accelerate import Accelerator
 
-from models.align import ModalityAlignment
+from models.align import ModalityAlignment, ModalityAlignment_v3
 from models.embed import DataEmbedding_ITS, TextEncoder, TextEncoder_v2
 from models.llm import PEFTTSLLM
 from models.tta import PEFTAdaINPatcher
@@ -45,8 +45,8 @@ def train(args, trn_loader, val_loader, ckpt_dir, use_load=False):
                                            dropout=args.ts_dropout, use_time=args.use_time, use_ts_pool=args.use_ts_pool).to(device)
     text_encoder = TextEncoder_v2(args, model, use_ln_out=True, device=device).to(device)
 
-    aligner = ModalityAlignment(d_model=model.hidden_size, n_heads=args.align_n_heads, 
-                                dropout=args.align_dropout, use_gating=args.use_align_gate).to(device)
+    aligner = ModalityAlignment_v3(model=model, d_model=model.hidden_size, n_heads=args.align_n_heads, 
+                                   dropout=args.align_dropout, use_gating=args.use_align_gate).to(device)
 
     optimizer = torch.optim.AdamW([p for p in model.parameters() if p.requires_grad], lr=args.lr, weight_decay=args.weight_decay)
     
@@ -69,8 +69,8 @@ def train(args, trn_loader, val_loader, ckpt_dir, use_load=False):
     
     for i, batch in enumerate(tqdm(trn_loader, desc='Initialize for the normalization')):
         _, x, mask, _, _, _, _, _ = batch
-        x, mask = x.to(device), mask.to(device)
         scaler.update_source(x, mask)
+        break
 
     source_state = scaler.finalize_source()
     
@@ -244,7 +244,7 @@ def train(args, trn_loader, val_loader, ckpt_dir, use_load=False):
                     "Train/confusion_metrix" : train_metrics["confusion_matrix"].tolist()
                     }
             
-            accelerator.log(result, step=epoch)
+            accelerator.log(result, step=global_step)
 
         else:
             result = {
@@ -259,7 +259,7 @@ def train(args, trn_loader, val_loader, ckpt_dir, use_load=False):
                     "Train/mape" : train_metrics["mape"]
                     }
             
-            accelerator.log(result, step=epoch)
+            accelerator.log(result, step=global_step)
 
         if best_val_loss > valid_loss:
             print(f'====[Epoch {epoch}/{args.n_epochs}] | Best Valid Loss update {best_val_loss:.3f} ==> {valid_loss:3f} ====')
@@ -302,8 +302,8 @@ def inference(args, data_loader, ckpt_dir, use_load=True):
     
     text_encoder = TextEncoder_v2(args, model, use_ln_out=True, device=device).to(device)
 
-    aligner = ModalityAlignment(d_model=model.hidden_size, n_heads=args.align_n_heads, 
-                                dropout=args.align_dropout, use_gating=args.use_align_gate).to(device)
+    aligner = ModalityAlignment_v3(model, d_model=model.hidden_size, n_heads=args.align_n_heads, 
+                                   dropout=args.align_dropout, use_gating=args.use_align_gate).to(device)
 
     load_misc_ckpt(ckpt_dir=ckpt_dir, model=model, ts_embedder=ts_embedder, text_encoder=text_encoder, aligner=aligner, 
                    ts_scaler=scaler, device=device)
@@ -413,8 +413,8 @@ def adaptation(args, data_loader, ckpt_dir, use_load=True):
     
     text_encoder = TextEncoder_v2(args, model, use_ln_out=True, device=device).to(device)
 
-    aligner = ModalityAlignment(d_model=model.hidden_size, n_heads=args.align_n_heads, 
-                                dropout=args.align_dropout, use_gating=args.use_align_gate).to(device)
+    aligner = ModalityAlignment_v3(model=model, d_model=model.hidden_size, n_heads=args.align_n_heads, 
+                                   dropout=args.align_dropout, use_gating=args.use_align_gate).to(device)
     
     load_misc_ckpt(ckpt_dir=ckpt_dir, model=model, ts_embedder=ts_embedder, text_encoder=text_encoder, aligner=aligner, device=device)
 

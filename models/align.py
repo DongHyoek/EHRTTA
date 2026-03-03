@@ -217,7 +217,93 @@ class CrossAttnBlock_v2(nn.Module):
                 attn_w = attn_w * q_valid_.unsqueeze(-1)
 
         return attn_out, attn_w if need_weights else None
+
+class CrossAttnBlock_v3(nn.Module):
+    """
+    Pre-LN Cross-Attention block:
+    Not using residual layer and FFN layers
+    Using vocab token embedding with Time-LLM style
+    Shapes (batch_first):
+      ts   : (B, M, d)
+      text : (B, N, d)
+    """
+    def __init__(self, model, d_model: int, n_heads: int, d_ff: Optional[int] = None, dropout: float = 0.0, use_gating: bool = True, gate_init: float = 0.1):
+        super(CrossAttnBlock_v3, self).__init__()
+
+        if d_ff is None:
+            d_ff = int(2 * d_model) # e.g. original dimension : 4096 * 2 = 8192
+
+        self.ln_q = nn.LayerNorm(d_model)
+        self.ln_kv = nn.LayerNorm(d_model)
+        self.attn = nn.MultiheadAttention(
+            embed_dim=d_model,
+            num_heads=n_heads,
+            dropout=dropout,
+            batch_first=True,
+        )
+
+        self.word_embeddings = model.backbone.get_input_embeddings().weight
+        self.vocab_size = self.word_embeddings.shape[0]
+        self.num_tokens = 1000
+        self.mapping_layer = nn.Linear(self.vocab_size, self.num_tokens)
+        
+        self.use_gating = use_gating
+        if use_gating:
+            # Scalar gate is simple and stable; you can switch to (d_model,) gate if you want.
+            self.gate = nn.Parameter(torch.tensor(float(gate_init)))
+
+    def forward(self, ts: torch.Tensor, ts_mask: Optional[torch.Tensor] = None, 
+                text_key_padding_mask: Optional[torch.Tensor] = None, need_weights: bool = False) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+        """
+        Args:
+          ts:  (B, M(=D*L), d)
+          text:(B, N, d)
+          ts_mask : (B, M) bool, Zero for positions to mask (padding)
+          text_key_padding_mask: (B, N) bool, True for positions to mask (padding)
+        
+        Returns:
+          out : (B, M, d)
+          attn_weights: (B, M, N) if need_weights else None
+        """
+        # ---- make broadcast mask ----
+        if ts_mask is not None:
+            if ts_mask.dim() == 2:            # (B, M)
+                q_valid = ts_mask.unsqueeze(-1)   # (B, M, 1)
+            elif ts_mask.dim() == 3:          # (B, M, 1) already
+                q_valid = ts_mask
+            else:
+                raise ValueError("ts_mask must be (B,M) or (B,M,1)")
+        else:
+            q_valid = None
+
+        q = self.ln_q(ts) # layer noramlization
+        kv = self.mapping_layer(self.word_embeddings.permute(1, 0)).permute(1, 0) # it is word token vectors
+        kv = kv.unsqueeze(0).expand(q.shape[0], kv.shape[0], kv.shape[1])
+        
+        # Cross-attn: Q from ts, K/V from text
+        if text_key_padding_mask is not None:
+            attn_out, attn_w = self.attn(query=q, key=kv, value=kv, key_padding_mask=text_key_padding_mask)  # masks K/V side need_weights=need_weights, average_attn_weights=False if need_weights else True,  # keep per-head if need_weights=False doesn't matter
+        else:
+            attn_out, attn_w = self.attn(query=q, key=kv, value=kv)
+
+        # Apply Q mask to attn_out
+        if q_valid is not None:
+            attn_out = attn_out * q_valid  
+        
+        # 일단, Head별로 attention weight을 내보내도록 수정
+        if need_weights and attn_w is not None and q_valid is not None:
+            # attn_w: (B, num_heads, M, N) if average_attn_weights=False
+            # zero out invalid query rows for cleaner analysis
+            q_valid_ = q_valid.squeeze(-1)  # (B,M)
+            if attn_w.dim() == 4:
+                attn_w = attn_w * q_valid_.unsqueeze(1).unsqueeze(-1)
+            else:
+                # (B,M,N)
+                attn_w = attn_w * q_valid_.unsqueeze(-1)
+
+        return attn_out, attn_w if need_weights else None
     
+
 class ModalityAlignment(nn.Module):
     """
     2-layer stack of CrossAttnBlock.
@@ -245,6 +331,28 @@ class ModalityAlignment(nn.Module):
         # return last weights (or you can return both)
         return ts, w2 if need_weights else None
 
+class ModalityAlignment_v3(nn.Module):
+    """
+    2-layer stack of CrossAttnBlock.
+    Q = time-series tokens, K/V = text tokens.
+    """
+    def __init__(self, model, d_model: int, n_heads: int, d_ff: Optional[int] = None, 
+                 dropout: float = 0.0, use_gating: bool = True, gate_init: float = 0.1):
+
+        super(ModalityAlignment_v3, self).__init__()
+
+        self.block = CrossAttnBlock_v3(model, d_model, n_heads, d_ff, dropout, use_gating, gate_init)
+
+    def forward(self, ts: torch.Tensor, text: torch.Tensor, ts_mask: Optional[torch.Tensor] = None, 
+                text_key_padding_mask: Optional[torch.Tensor] = None, need_weights: bool = False) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+
+        if text_key_padding_mask is not None:
+            text_key_padding_mask = (text_key_padding_mask == 0)  # bool tensor (B, N)
+
+        ts, w2 = self.block(ts, ts_mask=ts_mask, need_weights=need_weights)
+
+        # return last weights (or you can return both)
+        return ts, w2 if need_weights else None
 
 # -------------------------
 # Example usage
