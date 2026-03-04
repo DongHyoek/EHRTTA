@@ -17,6 +17,8 @@ def build_parser():
     # Embedding modle details
     parser.add_argument('--use_time', default=False, action='store_true',
                         help='define using time embedding')
+    parser.add_argument('--ts_dim', type=int, default=32,
+                        help='define time series embedding dimension')
     parser.add_argument('--ts_dropout', type=float, default=0.1,
                         help='the dropout rate of time series embdding modules')
     parser.add_argument('--use_ts_pool', default=False, action='store_true',
