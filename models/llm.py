@@ -9,6 +9,7 @@ import torch.nn.functional as F
 from transformers import AutoConfig, AutoModel
 from peft import LoraConfig, get_peft_model, TaskType, PeftModel
 from models.tta import PEFTAdaINPatcher
+from utils.losses import focal_loss
 
 class PEFTTSLLM(nn.Module):
     def __init__(self, args, device, adapter_dir='./', use_load=False):
@@ -20,6 +21,7 @@ class PEFTTSLLM(nn.Module):
         
         self.args = args
         self.device = device
+        self.focal_loss = focal_loss(gamma=2, alpha=[1,3])
 
         self.hf_config = AutoConfig.from_pretrained(args.model_id)
 
@@ -135,7 +137,8 @@ class PEFTTSLLM(nn.Module):
         logits = self.head(out)       # (B, C) or (B, 1)
         
         if self.args.task == "classification":
-            loss = F.cross_entropy(logits, labels.long())
+            # loss = F.cross_entropy(logits, labels.long())
+            loss = self.focal_loss(logits, labels.long())
         else:
             # regression: labels shape (B,) or (B,1)
             loss = F.mse_loss(logits.squeeze(-1), labels.float().view(-1))

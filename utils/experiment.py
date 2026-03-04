@@ -29,7 +29,8 @@ def train(args, trn_loader, val_loader, ckpt_dir, use_load=False):
                               init_kwargs={"wandb": {"name": f"{args.model_id}_{args.seed}_{args.task_label}_{args.data_source}", 
                                                      "tags": ["dora", "retain time series length", "use CLS token for text embeddings", 
                                                               "delete FFN blocks", "1B model and add summary token", "reduce sequence length",
-                                                              "independent & aggregator", "align with vocab prototypes", "reduce ts embed dim"]}})
+                                                              "independent & aggregator", "align with vocab prototypes", "reduce ts embed dim",
+                                                              "use focal loss"]}})
     global_step = 0
     patience = 0
 
