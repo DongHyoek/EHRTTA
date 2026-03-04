@@ -94,9 +94,9 @@ def train(args, trn_loader, val_loader, ckpt_dir, use_load=False):
         aligner.train()
         ts_embedder.train()
         text_encoder.train()
-
+        
         for i, batch in enumerate(tqdm(trn_loader, desc='Source Training', total=len(trn_loader))):
-            
+
             tt, x, ts_mask, texts_batch, var_ids_batch, field_ids_batch, y, pids = batch
             tt, x, ts_mask, var_ids_batch, field_ids_batch, y = tt.to(device), x.to(device), ts_mask.to(device), var_ids_batch.to(device), field_ids_batch.to(device), y.to(device)
 

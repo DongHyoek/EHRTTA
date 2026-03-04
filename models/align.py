@@ -319,7 +319,7 @@ class MaskedReprogrammingLayer(nn.Module):
         v = self.value_projection(kv).view(B, N, H, E)         # (B,N,H,E)
 
         # scores: (B,H,L,S)
-        scores = torch.einsum("blhe,bshe->bhls", q, k)
+        scores = torch.einsum("bmhe,bnhe->bhmn", q, k)
         scores = scores * (1.0 / math.sqrt(E))
 
         # key padding mask 적용 (mask=False인 곳을 -inf)
@@ -331,16 +331,17 @@ class MaskedReprogrammingLayer(nn.Module):
         A = self.dropout(A)
 
         # out: (B,M,H,E)
-        out_v = torch.einsum("bhls,bshe->blhe", A, v).reshape(B, M, H * E)
+        out_v = torch.einsum("bhmn,bnhe->bmhe", A, v).reshape(B, M, H * E)
         out = self.out_projection(out_v)
 
         if ts_mask is not None:
             # ts_mask: True=valid, False=pad
-            out = out * ts_mask   # (B,M,1) broadcast
+            out = out * ts_mask  
 
         scores_for_log = scores
         if ts_mask is not None:
-            scores_for_log = scores_for_log.masked_fill((ts_mask == 0), float("-inf"))
+            m = (ts_mask != 0).squeeze(-1)  # (B,M, 1) bool
+            scores_for_log = scores_for_log.masked_fill(~m[:, None, :, None], float("-inf"))
 
         return out, scores_for_log    # (B, M, d_llm), (B, H, M, N)
 
