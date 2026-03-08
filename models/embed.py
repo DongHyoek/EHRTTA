@@ -147,7 +147,8 @@ class DataEmbedding_ITS(nn.Module):
     def forward(self, tt, x, mask):
         """
         tt, x, mask: (B, D, L)
-        return: (B, D, d_model)
+        out  : (B, D, L, d_model)  - pooling되지 않은 표현
+        out  : (B, D, d_model)     - pooling된 표현
         """
         B, D, L = x.shape
         assert D == self.n_var, "The number of variables does not match with n_var"

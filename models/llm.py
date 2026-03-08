@@ -21,7 +21,7 @@ class PEFTTSLLM(nn.Module):
         
         self.args = args
         self.device = device
-        self.focal_loss = focal_loss(gamma=2, alpha=[1,3])
+        self.focal_loss = focal_loss(gamma=2, alpha=[1,3], device=device)
 
         self.hf_config = AutoConfig.from_pretrained(args.model_id)
 

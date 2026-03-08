@@ -1,6 +1,112 @@
 import torch
+import torch.nn as nn
 from typing import *
 
+class RevIN(nn.Module):
+    def __init__(self, num_features: int, eps=1e-5, affine=False, subtract_last=False, non_norm=False):
+        """
+        :param num_features: the number of features or channels
+        :param eps: a value added for numerical stability
+        :param affine: if True, RevIN has learnable affine parameters
+        """
+        super(RevIN, self).__init__()
+        self.num_features = num_features
+        self.eps = eps
+        self.affine = affine
+        self.subtract_last = subtract_last
+        self.non_norm = non_norm
+        if self.affine:
+            self._init_params()
+
+    def forward(self, x, mode: str, mask=None):
+        """
+        x: (B, V, L)
+        mask: (B, V, L) with {0,1}. 1=observed, 0=padding
+        """
+        if mask is None:
+            mask = torch.ones_like(x)
+
+        if mode == 'norm':
+            self._get_statistics(x, mask)
+            x = self._normalize(x, mask)
+        elif mode == 'denorm':
+            x = self._denormalize(x, mask)
+        else:
+            raise NotImplementedError
+        
+        return x
+
+    def _init_params(self):
+        # initialize RevIN params: (C,)
+        self.affine_weight = nn.Parameter(torch.ones(self.num_features))
+        self.affine_bias = nn.Parameter(torch.zeros(self.num_features))
+
+    def _get_statistics(self, x, mask):
+        dim2reduce = 2 # sequence length in last dimension
+        # (B, V, 1): number of observed points per series
+        count = mask.sum(dim=dim2reduce, keepdim=True)    # (B,V,1)
+        has_obs = (count > 0)                             # bool (B,V,1)
+
+        # denominator for mean/var (avoid div-by-zero)
+        denominator = torch.clamp(count, min=1.0)               # (B,V,1)
+
+        if self.subtract_last:
+            # right-pad => last observed index is count-1
+            last_idx = (count.to(torch.long) - 1).clamp(min=0)   # (B,V,1)
+            # gather last observed value along L
+            self.last = x.gather(dim=dim2reduce, index=last_idx)          # (B,V,1)
+        else:
+            mean = (x * mask).sum(dim=dim2reduce, keepdim=True) / denominator      # (B,V,1)
+            # if no obs, set mean=0 (neutral)
+            mean = torch.where(has_obs, mean, torch.zeros_like(mean))
+            self.mean = mean.detach()
+        
+                # centered values only on observed positions
+        if self.subtract_last:
+            xc = (x - self.last) * mask
+        else:
+            xc = (x - self.mean) * mask
+
+        var = (xc * xc).sum(dim=dim2reduce, keepdim=True) / denominator         # (B,V,1)
+        stdev = torch.sqrt(var + self.eps)
+
+        # if no obs, set stdev=1 (neutral)
+        stdev = torch.where(has_obs, stdev, torch.ones_like(stdev))
+        self.stdev = stdev.detach()
+
+    def _normalize(self, x, mask):
+        if self.non_norm:
+            return x
+        
+        if self.subtract_last:
+            x = x - self.last
+        else:
+            x = x - self.mean
+        x = x / self.stdev
+
+        if self.affine:
+            x = x * self.affine_weight.view(1, -1, 1) 
+            x = x + self.affine_bias.view(1, -1, 1)
+
+        return x * mask
+
+    def _denormalize(self, x, mask):
+        if self.non_norm:
+            return x
+        
+        x = x * mask
+
+        if self.affine:
+            x = x - self.affine_bias.view(1, -1, 1) 
+            x = x / (self.affine_weight.view(1, -1, 1) + self.eps * self.eps)
+
+        x = x * self.stdev
+        
+        if self.subtract_last:
+            x = x + self.last
+        else:
+            x = x + self.mean
+        return x
 
 class TSScaler:
     """
