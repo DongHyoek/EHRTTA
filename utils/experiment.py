@@ -30,7 +30,7 @@ def train(args, trn_loader, val_loader, ckpt_dir, use_load=False):
                                                      "tags": ["dora", "retain time series length", "use CLS token for text embeddings", 
                                                               "delete FFN blocks", "1B model and add summary token", "reduce sequence length",
                                                               "independent & aggregator", "align with vocab prototypes", "reduce ts embed dim",
-                                                              "use focal loss", "use RevIN norm"]}})
+                                                              "use focal loss", "use RevIN norm", "not use learnable summarize tokens"]}})
     global_step = 0
     patience = 0
 
@@ -553,8 +553,9 @@ def load_misc_ckpt(ckpt_dir, model, ts_embedder, text_encoder, aligner, ts_scale
     if scheduler is not None and "scheduler_state" in misc:
         scheduler.load_state_dict(misc["scheduler_state"])
     
-    if ts_scaler is not None:
-        ts_scaler.load_state_dict(misc['ts_scaler_state'], device=device)
+    # if ts_scaler is not None:
+    #     ts_scaler.load_state_dict(misc['ts_scaler_state'], device=device)
+    #     ts_scaler.load_state_dict(misc["head_state"], strict=strict)
 
     epoch = misc.get("epoch", None)
     best_val_loss = misc.get("best_val_loss", None)

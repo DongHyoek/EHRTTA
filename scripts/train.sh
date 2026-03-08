@@ -6,8 +6,8 @@ ulimit -s unlimited
 python main.py \
     --use_time  --use_norm_ema --align_return_weights --use_dora --cuda \
     --scheduler --early_stop \
-    --ckpt_dir ./results/checkpoint/align_with_vocab_timellmstyle_w_focal \
-    --metrics_dir ./results/metrics/align_with_vocab_timellmstyle_w_focal \
+    --ckpt_dir ./results/checkpoint/wo_learnable_summarize_tokens \
+    --metrics_dir ./results/metrics/wo_learnable_summarize_tokens \
     --te_n_vars 45 --te_n_fields 11 --te_n_texts 414 \
     --n_epochs 50 --lr 0.0001 --patience 5 \
     --batch_size 8 --h_pool last \
