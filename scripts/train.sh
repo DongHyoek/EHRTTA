@@ -7,8 +7,8 @@ ulimit -s unlimited
 python main.py \
     --use_time  --use_norm_ema --align_return_weights --use_dora --cuda \
     --scheduler --early_stop \
-    --ckpt_dir ./results/checkpoint/del_adapter \
-    --metrics_dir ./results/metrics/del_adapter \
+    --ckpt_dir ./results/checkpoint/del_adapter_non_independent \
+    --metrics_dir ./results/metrics/del_adapter_non_independent \
     --te_n_vars 45 --te_n_fields 11 --te_n_texts 414 \
     --n_epochs 50 --lr 0.0001 --patience 5 \
     --batch_size 8 --h_pool last \

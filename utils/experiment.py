@@ -32,7 +32,7 @@ def train(args, trn_loader, val_loader, ckpt_dir, use_load=False):
                                                               "delete FFN blocks", "1B model and add summary token", "reduce sequence length",
                                                               "independent & aggregator", "align with vocab prototypes",
                                                               "use focal loss", "use RevIN norm", "not use learnable summarize tokens",
-                                                              "delete adapters"]}})
+                                                              "delete adapters and training with variable dependent"]}})
     global_step = 0
     patience = 0
 
@@ -121,12 +121,15 @@ def train(args, trn_loader, val_loader, ckpt_dir, use_load=False):
                 aligned_embedding, cross_attn_weights = aligner(ts_embedding, text_embedding, ts_mask, need_weights=args.align_return_weights) # (B, D*L_ts, d_model)
 
                 # 4) input the aligned embedding vector
-                aligned_embedding = aligned_embedding.reshape(B*D, L, -1)      # (B, D * L, d) -> (B*D, L, d)
-                ts_mask = ts_mask.reshape(B*D, L)                             # (B, D*L)      -> (B*D, L)
-                var_idx_ts =  torch.arange(D, device=device).repeat(B)        # (B*D,)
+                # aligned_embedding = aligned_embedding.reshape(B*D, L, -1)      # (B, D * L, d) -> (B*D, L, d)
+                # ts_mask = ts_mask.reshape(B*D, L)                             # (B, D*L)      -> (B*D, L)
+                # var_idx_ts =  torch.arange(D, device=device).repeat(B)        # (B*D,)
 
-                outputs = model(inputs_embeds=aligned_embedding, attention_mask=ts_mask, labels=y, 
-                                var_idx_ts=var_idx_ts, num_ts=D) # Dict(loss, logits, pooled : [(B, d_model)])
+                # outputs = model(inputs_embeds=aligned_embedding, attention_mask=ts_mask, labels=y, 
+                #                 var_idx_ts=var_idx_ts, num_ts=D) # Dict(loss, logits, pooled : [(B, d_model)])
+
+                outputs = model(inputs_embeds=aligned_embedding, attention_mask=ts_mask, labels=y) # Dict(loss, logits, pooled : [(B, d_model)])
+
                 loss = outputs['loss']
 
             # optimizing
@@ -187,11 +190,13 @@ def train(args, trn_loader, val_loader, ckpt_dir, use_load=False):
                     aligned_embedding, cross_attn_weights = aligner(ts_embedding, text_embedding, ts_mask, need_weights=args.align_return_weights) # (B, D, d_model)
 
                     # 4) input the aligned embedding vector
-                    aligned_embedding = aligned_embedding.reshape(B*D, L, -1)      # (B, D * L, d) -> (B*D, L, d)
-                    ts_mask = ts_mask.reshape(B*D, L)                             # (B, D*L)      -> (B*D, L)
-                    var_idx_ts =  torch.arange(D, device=device).repeat(B)        # (B*D,)
-                    outputs = model(inputs_embeds=aligned_embedding, attention_mask=ts_mask, labels=y, 
-                                    var_idx_ts=var_idx_ts, num_ts=D) # Dict(loss, logits, pooled : [(B, d_model)])
+                    # aligned_embedding = aligned_embedding.reshape(B*D, L, -1)      # (B, D * L, d) -> (B*D, L, d)
+                    # ts_mask = ts_mask.reshape(B*D, L)                             # (B, D*L)      -> (B*D, L)
+                    # var_idx_ts =  torch.arange(D, device=device).repeat(B)        # (B*D,)
+                    # outputs = model(inputs_embeds=aligned_embedding, attention_mask=ts_mask, labels=y, 
+                    #                 var_idx_ts=var_idx_ts, num_ts=D) # Dict(loss, logits, pooled : [(B, d_model)])
+
+                    outputs = model(inputs_embeds=aligned_embedding, attention_mask=ts_mask, labels=y) # Dict(loss, logits, pooled : [(B, d_model)])
                     
                 running_val_loss  += outputs['loss'].item()
                 
@@ -202,8 +207,8 @@ def train(args, trn_loader, val_loader, ckpt_dir, use_load=False):
                 else:
                     evaluator.update_regression(logits, gt)
 
-                torch.save(cross_attn_weights.detach().cpu().numpy(), f'{ckpt_dir}/attn_weights_valid_{i:03d}.pt')
-                torch.save(torch.tensor(pids), f'{ckpt_dir}/pids_valid_{i:03d}.pt')
+                # torch.save(cross_attn_weights.detach().cpu().numpy(), f'{ckpt_dir}/attn_weights_valid_{i:03d}.pt')
+                # torch.save(torch.tensor(pids), f'{ckpt_dir}/pids_valid_{i:03d}.pt')
 
             valid_loss = running_val_loss / len(val_loader)
             valid_metrics = evaluator.compute()
@@ -344,11 +349,13 @@ def inference(args, data_loader, ckpt_dir, use_load=True):
                 aligned_embedding, cross_attn_weights = aligner(ts_embedding, text_embedding, ts_mask, need_weights=args.align_return_weights) # (B, D, d_model)
 
                 # 4) input the aligned embedding vector
-                aligned_embedding = aligned_embedding.reshape(B*D, L, -1)      # (B, D * L, d) -> (B*D, L, d)
-                ts_mask = ts_mask.reshape(B*D, L)                             # (B, D*L)      -> (B*D, L)
-                var_idx_ts =  torch.arange(D, device=device).repeat(B)        # (B*D,)
-                outputs = model(inputs_embeds=aligned_embedding, attention_mask=ts_mask, labels=y, 
-                                var_idx_ts=var_idx_ts, num_ts=D) # Dict(loss, logits, pooled : [(B, d_model)])
+                # aligned_embedding = aligned_embedding.reshape(B*D, L, -1)      # (B, D * L, d) -> (B*D, L, d)
+                # ts_mask = ts_mask.reshape(B*D, L)                             # (B, D*L)      -> (B*D, L)
+                # var_idx_ts =  torch.arange(D, device=device).repeat(B)        # (B*D,)
+                # outputs = model(inputs_embeds=aligned_embedding, attention_mask=ts_mask, labels=y, 
+                #                 var_idx_ts=var_idx_ts, num_ts=D) # Dict(loss, logits, pooled : [(B, d_model)])
+
+                outputs = model(inputs_embeds=aligned_embedding, attention_mask=ts_mask, labels=y) # Dict(loss, logits, pooled : [(B, d_model)])
                 
             running_infer_loss  += outputs['loss'].item()
             
@@ -454,11 +461,13 @@ def adaptation(args, data_loader, ckpt_dir, use_load=True):
                 aligned_embedding, cross_attn_weights = aligner(ts_embedding, text_embedding, ts_mask, need_weights=args.align_return_weights) # (B, D*L, d_model)
 
                 # 4) input the aligned embedding vector
-                aligned_embedding = aligned_embedding.reshape(B*D, L, -1)      # (B, D * L, d) -> (B*D, L, d)
-                ts_mask = ts_mask.reshape(B*D, L)                             # (B, D*L)      -> (B*D, L)
-                var_idx_ts =  torch.arange(D, device=device).repeat(B)        # (B*D,)
-                outputs = model(inputs_embeds=aligned_embedding, attention_mask=ts_mask, labels=y, 
-                                var_idx_ts=var_idx_ts, num_ts=D) # Dict(loss, logits, pooled : [(B, d_model)])
+                # aligned_embedding = aligned_embedding.reshape(B*D, L, -1)      # (B, D * L, d) -> (B*D, L, d)
+                # ts_mask = ts_mask.reshape(B*D, L)                             # (B, D*L)      -> (B*D, L)
+                # var_idx_ts =  torch.arange(D, device=device).repeat(B)        # (B*D,)
+                # outputs = model(inputs_embeds=aligned_embedding, attention_mask=ts_mask, labels=y, 
+                #                 var_idx_ts=var_idx_ts, num_ts=D) # Dict(loss, logits, pooled : [(B, d_model)])
+
+                outputs = model(inputs_embeds=aligned_embedding, attention_mask=ts_mask, labels=y) # Dict(loss, logits, pooled : [(B, d_model)])
                 
             running_adapt_loss  += outputs['loss'].item()
             

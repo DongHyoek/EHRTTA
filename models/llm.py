@@ -109,18 +109,18 @@ class PEFTTSLLM_v2(nn.Module):
         else: # target adaptation mode
             outputs = self.backbone_w_tta(inputs_embeds=inputs_embeds, attention_mask=attention_mask, return_dict=True)
             
-        h = outputs.last_hidden_state  # (B*D, L+1, d_model)
+        h = outputs.last_hidden_state  # (B, D*L, d_model)
 
-        pooled = self._pool(h, attention_mask)  # (B*D, d_model)
+        pooled = self._pool(h, attention_mask)  # (B, d_model)
 
-        ## Aggregation with self-attention
-        pooled = pooled.reshape(-1, num_ts, self.hidden_size)        # (B, D, d_model)
-        cls = self.cls.expand(pooled.shape[0], 1, self.hidden_size)  # (B, 1, d_model)
-        pooled = torch.cat([cls, pooled], dim=1)                     # (B, 1+D, d_model)
+        # ## Aggregation with self-attention
+        # pooled = pooled.reshape(-1, num_ts, self.hidden_size)        # (B, D, d_model)
+        # cls = self.cls.expand(pooled.shape[0], 1, self.hidden_size)  # (B, 1, d_model)
+        # pooled = torch.cat([cls, pooled], dim=1)                     # (B, 1+D, d_model)
         
-        out = self.aggregator(pooled) # (B, 1+D, d_model)
-        out = out[:,0,:]              # (B, d_model)
-        logits = self.head(out)       # (B, C) or (B, 1)
+        # out = self.aggregator(pooled) # (B, 1+D, d_model)
+        # out = out[:,0,:]              # (B, d_model)
+        logits = self.head(pooled)       # (B, C) or (B, 1)
         
         if self.args.task == "classification":
             # loss = F.cross_entropy(logits, labels.long())
