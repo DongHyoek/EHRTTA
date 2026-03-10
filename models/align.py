@@ -350,7 +350,7 @@ class ModalityAlignment(nn.Module):
     2-layer stack of CrossAttnBlock.
     Q = time-series tokens, K/V = text tokens.
     """
-    def __init__(self, d_model: int, n_heads: int, d_ff: Optional[int] = None, 
+    def __init__(self, model, d_ts: int, d_model: int, n_heads: int, d_ff: Optional[int] = None, 
                  dropout: float = 0.0, use_gating: bool = True, gate_init: float = 0.1):
 
         super(ModalityAlignment, self).__init__()
@@ -393,23 +393,3 @@ class ModalityAlignment_v3(nn.Module):
         ts, w2 = self.block(ts, ts_mask=ts_mask, need_weights=need_weights)
 
         return ts, w2
-
-# -------------------------
-# Example usage
-# -------------------------
-if __name__ == "__main__":
-    B, M, N, d = 32, 128, 256, 4096 # M : time series length, N : tokenized text length
-    n_heads = 8
-
-    ts = torch.randn(B, M, d)      # time-series tokens
-    text = torch.randn(B, N, d)    # text tokens (e.g., from a text encoder)
-
-    # Mask: True indicates padding positions in text (K/V) to ignore
-    text_mask = torch.zeros(B, N, dtype=torch.bool)
-    text_mask[:, -10:] = True  # pretend last 10 tokens are padding
-
-    model = ModalityAlignment(d_model=d, n_heads=n_heads, dropout=0.1, use_gating=True)
-
-    ts_enriched, attn_weights = model(ts, text, text_key_padding_mask=text_mask, need_weights=True)
-    print(ts_enriched.shape)   # (B, M, d)
-    print(attn_weights.shape)  # (B, M, N)

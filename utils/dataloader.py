@@ -727,7 +727,7 @@ def make_collate_ists_with_text(args, D, text_bundle : TextBundle):
         #     print(mask.shape)       # (B,D,L)
         #     print(len(texts_batch)) # (B*N_text), list
         #     print(var_ids_batch)    # (B*N_text), tensor
-        #     print(field_ids_batch)    # (B*N_text), tensor
+        #     print(field_ids_batch)  # (B*N_text), tensor
         #     print(y.shape)          # (B), tensor
         #     print(len(pids))        # (B), list
     """
