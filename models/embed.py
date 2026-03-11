@@ -128,6 +128,7 @@ class DataEmbedding_ITS(nn.Module):
     출력:
       out  : (B, D, L, d_model)  - pooling되지 않은 표현
       out  : (B, D, d_model)     - pooling된 표현
+      out_mask : (B, D, L+1)     - 맨 앞에 variable embedding은 항상 True로 설정
     """
     def __init__(self, d_model: int, n_var: int, device = None, dropout: float = 0.1, use_time: bool = True, use_ts_pool: bool = False):
         super().__init__()
@@ -163,14 +164,20 @@ class DataEmbedding_ITS(nn.Module):
         value_emb = self.value_embedding(vx)
 
         if self.use_time:
-            time_emb = self.time_embedding(tt1)                  # (B, D, L, d_model)
+            time_emb = self.time_embedding(tt1)                         # (B, D, L, d_model)
             sequence_emb = value_emb + (mask.unsqueeze(-1) * time_emb)  # pad는 mask=0이라 영향 제거
         else:
             sequence_emb = value_emb
 
         # 변수 ID embedding을 더해 변수별 의미 차이 주입
-        vars_prompt = self.variable_embedding(self.vars.view(1, D)).unsqueeze(2) # (1, D, 1, d_model)
-        sequence_emb = sequence_emb + vars_prompt                                # (B, D, L, d_model)
+        vars_prompt = self.variable_embedding(self.vars.view(1, D)).unsqueeze(2)   # (1, D, 1, d_model)
+        # sequence_emb = sequence_emb + vars_prompt                                # (B, D, L, d_model)
+
+        vars_prompt = vars_prompt.expand(B, -1, -1, -1) # for concatenation
+        sequence_emb = torch.cat([vars_prompt, sequence_emb], dim=2)               # (B, D, L, d_model)
+
+        var_mask = torch.ones(B, D, 1).to(self.device)
+        out_mask = torch.cat([var_mask, mask], dim=2)
 
         sequence_emb = self.dropout(sequence_emb)
 
@@ -180,7 +187,7 @@ class DataEmbedding_ITS(nn.Module):
             return out
         
         else:
-            return sequence_emb
+            return sequence_emb, out_mask
         
     def masked_mean_pool_seq(self, h, mask, eps=1e-8):
         """
