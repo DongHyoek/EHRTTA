@@ -4,3 +4,4 @@ models/*.ipynb
 wandb/
 results/
 *.ipynb
+*.png
