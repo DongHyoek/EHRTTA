@@ -364,20 +364,20 @@ class TextEncoder_v2(nn.Module):
             nn.init.normal_(self.var_tag.weight, mean=0.0, std=0.02)
             nn.init.normal_(self.field_tag.weight, mean=0.0, std=0.02)
 
-        # if args.te_cls_init == 'raw_tok':
-        #     with torch.no_grad():
-        #         # initialize to variable tag
-        #         var_tok_ids, _ = self._tokenize('Variable')
-        #         var_init_vec = self.embed.weight[var_tok_ids[-1]]         
-        #         self.var_tag.copy_(var_init_vec.view(1,1,-1))    
+        if args.te_cls_init == 'raw_tok':
+            with torch.no_grad():
+                # initialize to variable tag
+                var_tok_ids, _ = self._tokenize('Variable')
+                var_init_vec = self.embed.weight[var_tok_ids[-1][-1]]         
+                self.var_tag.weight.copy_(var_init_vec.view(1,-1))    
 
-        #         # initialize to 
-        #         field_tag_ids, _ = self._tokenize('Characteristic')
-        #         field_init_vec = self.embed.weight[field_tag_ids[-1]]         
-        #         self.field_tag.copy_(field_init_vec.view(1,1,-1))    
-        # else:
-        #     nn.init.normal_(self.var_tag.weight, mean=0.0, std=0.02)
-        #     nn.init.normal_(self.field_tag.weight, mean=0.0, std=0.02)
+                # initialize to 
+                field_tag_ids, _ = self._tokenize('Characteristic')
+                field_init_vec = self.embed.weight[field_tag_ids[-1][-1]]         
+                self.field_tag.weight.copy_(field_init_vec.view(1,-1))    
+        else:
+            nn.init.normal_(self.var_tag.weight, mean=0.0, std=0.02)
+            nn.init.normal_(self.field_tag.weight, mean=0.0, std=0.02)
 
         # # optional: learnable scale to keep conditioning stable
         # self.tag_scale = nn.Parameter(torch.tensor(float(tag_scale_init)))

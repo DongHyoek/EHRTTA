@@ -128,16 +128,16 @@ class PEFTTSLLM_v3(nn.Module):
 
         pooled = self._pool(h, attention_mask)  # (B*D, d_model)
 
-        # ## Aggregation with self-attention
-        # pooled = pooled.reshape(-1, num_ts, self.hidden_size)        # (B, D, d_model)
-        # cls = self.cls.expand(pooled.shape[0], 1, self.hidden_size)  # (B, 1, d_model)
-        # pooled = torch.cat([cls, pooled], dim=1)                     # (B, 1+D, d_model)
+        ## Aggregation with self-attention
+        pooled = pooled.reshape(-1, num_ts, self.hidden_size)        # (B, D, d_model)
+        cls = self.cls.expand(pooled.shape[0], 1, self.hidden_size)  # (B, 1, d_model)
+        pooled = torch.cat([cls, pooled], dim=1)                     # (B, 1+D, d_model)
         
-        # out = self.aggregator(pooled) # (B, 1+D, d_model)
-        # out = out[:,0,:]              # (B, d_model)
-        # logits = self.head(out)       # (B, C) or (B, 1)
+        out = self.aggregator(pooled) # (B, 1+D, d_model)
+        out = out[:,0,:]              # (B, d_model)
+        logits = self.head(out)       # (B, C) or (B, 1)
 
-        logits = self.head(pooled)       # (B, C) or (B, 1)
+        # logits = self.head(pooled)       # (B, C) or (B, 1)
         
         if self.args.task == "classification":
             # loss = F.cross_entropy(logits, labels.long())
@@ -364,14 +364,14 @@ class PEFTTSLLM(nn.Module):
         transformers AutoModel은 inputs_embeds를 지원함. :contentReference[oaicite:4]{index=4}
         """
 
-        # ## Add summarize tokens with variable embedding 
-        # if self.args.h_pool == 'last':
-        #     sum_tok = self.sum_tok.expand(inputs_embeds.shape[0], 1, self.hidden_size)      # (B*D, 1, d)
-        #     sum_tok = sum_tok + self.tsvar_emb(var_idx_ts).unsqueeze(1)                     # (B*D, 1, d)
-        #     inputs_embeds  = torch.cat([inputs_embeds, sum_tok], 1)                         # (B*D, L+1, d)
+        ## Add summarize tokens with variable embedding 
+        if self.args.h_pool == 'last':
+            sum_tok = self.sum_tok.expand(inputs_embeds.shape[0], 1, self.hidden_size)      # (B*D, 1, d)
+            sum_tok = sum_tok + self.tsvar_emb(var_idx_ts).unsqueeze(1)                     # (B*D, 1, d)
+            inputs_embeds  = torch.cat([inputs_embeds, sum_tok], 1)                         # (B*D, L+1, d)
 
-        #     sum_tok_mask = torch.ones(attention_mask.shape[0], 1, device=self.device, dtype=attention_mask.dtype)
-        #     attention_mask = torch.cat([attention_mask, sum_tok_mask], 1)  # (B*D, L+1)
+            sum_tok_mask = torch.ones(attention_mask.shape[0], 1, device=self.device, dtype=attention_mask.dtype)
+            attention_mask = torch.cat([attention_mask, sum_tok_mask], 1)  # (B*D, L+1)
         
         ## LLM forward
         if not self.args.adapt_mode: # source train mode
