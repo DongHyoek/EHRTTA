@@ -248,33 +248,35 @@ def create_icu_dashboard(
     # NaN 제외하고 clipping 범위 계산
     valid = heatmap_matrix[~np.isnan(heatmap_matrix)]
     if len(valid) == 0:
-        raise ValueError("All values are NaN.")
+        print("All values are NaN.")
+        ax0.set_facecolor('black')
 
-    heatmap_cliped = np.clip(heatmap_matrix, min_clip, max_clip)
+    else:
+        heatmap_cliped = np.clip(heatmap_matrix, min_clip, max_clip)
 
-    # NaN을 masked array로 변환
-    heatamp_masked_matrix = np.ma.masked_invalid(heatmap_cliped.T)
+        # NaN을 masked array로 변환
+        heatamp_masked_matrix = np.ma.masked_invalid(heatmap_cliped.T)
 
-    ax0.imshow(
-            heatamp_masked_matrix,
-            aspect="auto",
-            origin="lower",
-            cmap=cmap,
-            interpolation="nearest",
-            zorder=1
-            )
+        ax0.imshow(
+                heatamp_masked_matrix,
+                aspect="auto",
+                origin="lower",
+                cmap=cmap,
+                interpolation="nearest",
+                zorder=1
+                )
 
-    # draw lab observation bins as vertical line
-    for i, b in enumerate(lab_obs_bins):
-        ax0.axvline(
-            x=b,
-            color='green',
-            linestyle='--',
-            linewidth=0.8,
-            alpha=0.6,
-            zorder=2,
-            label='Lab Observed time' if i == 0 else None
-            )
+        # draw lab observation bins as vertical line
+        for i, b in enumerate(lab_obs_bins):
+            ax0.axvline(
+                x=b,
+                color='green',
+                linestyle='--',
+                linewidth=0.8,
+                alpha=0.6,
+                zorder=2,
+                label='Lab Observed time' if i == 0 else None
+                )
 
     ax0.set_title(vital_group_name, pad=1.5, fontsize=16)
     ax0.set_xlim(start_time, end_time)
@@ -469,5 +471,13 @@ def create_icu_dashboard(
     for ax in axes:
         ax.set_facecolor("white")
 
-    fig.savefig(save_path)
+    # fig.savefig(save_path)
     plt.close(fig)
+    fig.canvas.draw()
+
+    # 2. 렌더링된 메모리 버퍼에서 RGBA 데이터 추출
+    rgba_buffer = np.array(fig.canvas.renderer.buffer_rgba())
+
+    # 3. PIL 이미지로 변환 및 리사이즈.
+    img = Image.fromarray(rgba_buffer).convert("RGB")
+    img.save(save_path)
