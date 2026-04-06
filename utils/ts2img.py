@@ -1,10 +1,11 @@
 import numpy as np
 import pandas as pd
+import gc
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 from matplotlib.lines import Line2D
 from matplotlib.colors import ListedColormap
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 from PIL import Image
 
 import warnings
@@ -295,7 +296,7 @@ def create_icu_dashboard(
         # Version 1) Assign independent variable area in subplot 
         for idx, group_name in enumerate(lab_groups, start=1):
             ax = axes[idx]
-            sub = lab_df[lab_df[group_col] == group_name].copy()
+            sub = lab_df[lab_df[group_col] == group_name]
             ax.set_title(group_name, pad=1.5, fontsize=16)
 
             # 1. 이 그룹에 속한 변수 목록 고정
@@ -343,7 +344,7 @@ def create_icu_dashboard(
 
             # 4. 변수별 데이터 플로팅
             for v_idx, lab_name in enumerate(group_labs):
-                lab_sub = sub[sub[var_col] == lab_name].copy()
+                lab_sub = sub[sub[var_col] == lab_name]
                 if lab_sub.empty:
                     continue
 
@@ -402,7 +403,7 @@ def create_icu_dashboard(
         ## Version 2) all variables in one subplot  
         for idx, group_name in enumerate(lab_groups, start=1):
             ax = axes[idx]
-            sub = lab_df[lab_df[group_col] == group_name].copy()
+            sub = lab_df[lab_df[group_col] == group_name]
 
             ax.set_title(group_name, pad=1.5)
 
@@ -425,7 +426,7 @@ def create_icu_dashboard(
             legend_handles = []
 
             for lab_name in group_labs:
-                lab_sub = sub[sub[var_col] == lab_name].copy()
+                lab_sub = sub[sub[var_col] == lab_name]
                 if lab_sub.empty:
                     continue
 
@@ -471,13 +472,351 @@ def create_icu_dashboard(
     for ax in axes:
         ax.set_facecolor("white")
 
-    # fig.savefig(save_path)
+    fig.savefig(save_path)
     plt.close(fig)
-    fig.canvas.draw()
+    # fig.canvas.draw()
 
-    # 2. 렌더링된 메모리 버퍼에서 RGBA 데이터 추출
-    rgba_buffer = np.array(fig.canvas.renderer.buffer_rgba())
+    # # 2. 렌더링된 메모리 버퍼에서 RGBA 데이터 추출
+    # rgba_buffer = np.array(fig.canvas.renderer.buffer_rgba())
 
-    # 3. PIL 이미지로 변환 및 리사이즈.
-    img = Image.fromarray(rgba_buffer).convert("RGB")
-    img.save(save_path)
+    # # 3. PIL 이미지로 변환 및 리사이즈.
+    # img = Image.fromarray(rgba_buffer).convert("RGB")
+    # img.save(save_path)
+    gc.collect()
+
+######################################################
+##########         Modified Version         ##########
+######################################################
+
+
+def draw_heatmap_in_cell(ax, matrix, cell_rect, cmap, vmin, vmax):
+    x0, x1, y0, y1 = cell_rect
+    valid = matrix[~np.isnan(matrix)] # validation check
+
+    if len(valid) == 0:
+        print("All values are NaN.")
+        ax.set_facecolor('black')
+
+    else:
+        cliped_matrix = np.clip(matrix, vmin, vmax)
+        heatamp_masked_matrix = np.ma.masked_invalid(cliped_matrix.T)
+
+        ax.imshow(
+            heatamp_masked_matrix,
+            cmap=cmap,
+            vmin=vmin,
+            vmax=vmax,
+            interpolation="nearest",
+            aspect="auto",
+            extent=[x0, x1, y1, y0],   # cell 전체에 매핑
+            origin="upper",
+            zorder=1
+            )
+
+def draw_row_guides_in_cell(ax, inner_x0: float, inner_x1: float, inner_y0: float, inner_y1: float, 
+                            n_vars: int, row_bg_alpha: float = 0.15, boundary_lw: float = 0.6, 
+                            center_lw: float = 0.5, minor_lw: float = 0.35, draw_minor_guides: bool = True):
+    
+    """
+    row 단위 배경, 경계선, 중앙 기준선(z=0), minor guide를
+    pixel 좌표계에서 직접 그린다.
+    """
+    if n_vars <= 0:
+        return
+
+    row_h = (inner_y1 - inner_y0) / n_vars
+
+    # row 내부에서 사용할 z 대응 offset
+    # 원래 코드의 minor_ticks 대응
+    minor_offsets = [-0.3, -0.2, -0.1, 0.1, 0.2, 0.3]
+
+    for v_idx in range(n_vars):
+        ry0 = inner_y0 + v_idx * row_h
+        ry1 = inner_y0 + (v_idx + 1) * row_h
+        rc = (ry0 + ry1) / 2.0  # 중앙선 = z=0
+
+        # 1) 배경 shading
+        if v_idx % 2 == 0:
+            ax.add_patch(
+                plt.Rectangle(
+                    (inner_x0, ry0),
+                    inner_x1 - inner_x0,
+                    ry1 - ry0,
+                    facecolor="gray",
+                    alpha=row_bg_alpha,
+                    edgecolor="none",
+                    zorder=0,
+                )
+            )
+
+        # 2) row 경계선
+        # 아래쪽 경계선만 그리면 맨 위 경계가 비므로,
+        # 첫 row에서 윗 경계도 같이 그려주는 게 더 깔끔
+        if v_idx == 0:
+            ax.plot(
+                [inner_x0, inner_x1],
+                [ry0, ry0],
+                color="black",
+                lw=boundary_lw,
+                alpha=0.7,
+                zorder=1,
+            )
+
+        ax.plot(
+            [inner_x0, inner_x1],
+            [ry1, ry1],
+            color="black",
+            lw=boundary_lw,
+            alpha=0.7,
+            zorder=1,
+        )
+
+        # 3) 중앙 기준선 (z=0)
+        ax.plot(
+            [inner_x0, inner_x1],
+            [rc, rc],
+            color="gray",
+            lw=center_lw,
+            linestyle="--",
+            alpha=0.9,
+            zorder=1,
+        )
+
+        # 4) minor guides (z=±1, ±2, ±3 위치 대응)
+        if draw_minor_guides:
+            for off in minor_offsets:
+                yy = rc - row_h * off
+                ax.plot(
+                    [inner_x0, inner_x1],
+                    [yy, yy],
+                    color="gray",
+                    lw=minor_lw,
+                    linestyle=":",
+                    alpha=0.35,
+                    zorder=1,
+                )
+
+def draw_scatter_in_cell(ax, sub_df, group_labs, lab_meta, cell_rect, time_col, var_col, z_col, 
+                         start_time, end_time, min_clip, max_clip, marker_scale=1.0):
+
+    x0, x1, y0, y1 = cell_rect
+    cell_w = x1 - x0
+    cell_h = y1 - y0
+
+    n_vars = len(group_labs)
+    if n_vars == 0:
+        return
+
+    pad_x = cell_w * 0.04
+    pad_y = cell_h * 0.06
+
+    inner_x0 = x0 + pad_x
+    inner_x1 = x1 - pad_x
+    inner_y0 = y0 + pad_y
+    inner_y1 = y1 - pad_y
+
+    row_h = (inner_y1 - inner_y0) / n_vars
+
+    # row guide 먼저 그림
+    draw_row_guides_in_cell(ax=ax, inner_x0=inner_x0, inner_x1=inner_x1, inner_y0=inner_y0, inner_y1=inner_y1, 
+                            n_vars=n_vars, row_bg_alpha=0.15, boundary_lw=0.6, center_lw=0.5, minor_lw=0.35, 
+                            draw_minor_guides=True)
+
+    for v_idx, lab_name in enumerate(group_labs):
+        lab_sub = sub_df[sub_df[var_col] == lab_name]
+        if lab_sub.empty:
+            continue
+
+        meta = lab_meta.get(lab_name, {})
+        polarity = meta.get("polarity", "both_bad")
+
+        t = lab_sub[time_col].values
+        z = np.clip(lab_sub[z_col].values, min_clip, max_clip)
+
+        # x mapping
+        if end_time == start_time:
+            xn = np.zeros_like(t, dtype=float)
+        else:
+            xn = (t - start_time) / (end_time - start_time)
+        xp = inner_x0 + xn * (inner_x1 - inner_x0)
+
+        # y mapping: 원래 코드의 z -> ±0.3 매핑 유지
+        row_center = inner_y0 + (v_idx + 0.5) * row_h
+        yp = row_center - (z / max_clip) * (row_h * 0.3)
+
+        colors = [value_color_from_z(v) for v in z]
+        risks = [compute_clinical_risk_from_z(v, polarity=polarity) for v in z]
+        sizes = np.array([size_from_risk(r) for r in risks]) * marker_scale
+        markers = [marker_from_risk(r) for r in risks]
+
+        for m in set(markers):
+            idxs = [i for i, mm in enumerate(markers) if mm == m]
+            ax.scatter(
+                xp[idxs],
+                yp[idxs],
+                s=sizes[idxs],
+                c=[colors[i] for i in idxs],
+                marker=m,
+                edgecolors="black",
+                linewidths=0.35,
+                alpha=0.95,
+                zorder=3,
+                clip_on=False,
+            )
+
+def create_icu_dashboard_canvas(
+    vital_df: pd.DataFrame,
+    lab_df: pd.DataFrame,
+    lab_obs_bins: List[int],
+    vital_group_name: str,
+    lab_groups: List[str],
+    stats_dict: Dict[str, Dict[str, float]],
+    vital_vars: List[str],
+    lab_meta: Dict[str, Dict],
+    save_path: str = "icu_dashboard_canvas.png",
+    time_col: str = "time_bin",
+    value_col: str = "value",
+    var_col: str = "var_name",
+    group_col: str = "group",
+    start_time: float = 0,
+    end_time: float = 12 * 24,
+    fig_px: Tuple[int, int] = (336, 336),
+    dpi: int = 100,
+    min_clip: int = -3,
+    max_clip: int = 3,
+    grid_layout: Tuple[int, int] = (3, 3),
+    base_scale=672
+):
+
+    def _to_figsize_inches(fig_px: Union[int, Tuple[int, int]], dpi: int = 100):
+        """
+        fig_px:
+            - int: square image (fig_px x fig_px)
+            - tuple: (width_px, height_px)
+        """
+        if isinstance(fig_px, int):
+            width_px, height_px = fig_px, fig_px
+        else:
+            width_px, height_px = fig_px
+
+        figsize = (width_px / dpi, height_px / dpi)
+
+        return width_px, height_px, figsize
+
+    def _cell_rect(idx: int, nrows: int, ncols: int, width_px: int, height_px: int):
+        row = idx // ncols
+        col = idx % ncols
+
+        cell_w = width_px / ncols
+        cell_h = height_px / nrows
+
+        x0 = col * cell_w
+        x1 = (col + 1) * cell_w
+        y0 = row * cell_h
+        y1 = (row + 1) * cell_h
+
+        return x0, x1, y0, y1
+    
+    # -----------------------------
+    # 1. Canvas Setting & Standardization
+    # -----------------------------
+    width_px, height_px, figsize = _to_figsize_inches(fig_px, dpi=dpi)
+
+    nrows, ncols = grid_layout
+
+    vital_df = standardize_long_df(vital_df, stats_dict, var_col=var_col, value_col=value_col, out_col="zvalue")
+    lab_df = standardize_long_df(lab_df, stats_dict, var_col=var_col, value_col=value_col, out_col="zvalue")
+
+    fig = plt.figure(figsize=figsize, dpi=dpi)
+    ax = fig.add_axes([0, 0, 1, 1])
+    ax.set_xlim(0, width_px)
+    ax.set_ylim(height_px, 0)
+    ax.set_axis_off()
+
+    # background setting
+    ax.add_patch(plt.Rectangle((0, 0), width_px, height_px, facecolor="white", edgecolor="none", zorder=-10))
+
+    # cell borders
+    cell_w = width_px / ncols
+    cell_h = height_px / nrows
+
+    for c in range(1, ncols):
+        x = c * cell_w
+        ax.plot([x, x], [0, height_px], color="black", lw=1.0, zorder=10)
+
+    for r in range(1, nrows):
+        y = r * cell_h
+        ax.plot([0, width_px], [y, y], color="black", lw=1.0, zorder=10)
+
+    # -----------------------------
+    # 2. 1st subplot: Vital heatmap
+    # -----------------------------
+    heatmap_matrix = vital_df.pivot(index=time_col, columns=var_col, values="zvalue")[vital_vars].values
+
+    cmap = plt.cm.coolwarm.copy()
+    cmap.set_bad(color="black")
+
+    rect0 = _cell_rect(0, nrows, ncols, width_px, height_px)
+    draw_heatmap_in_cell(
+        ax=ax,
+        matrix=heatmap_matrix,
+        cell_rect=rect0,
+        cmap=cmap,
+        vmin=min_clip,
+        vmax=max_clip,
+    )
+
+    # lab observation lines in first cell as green vertical line 
+    x0, x1, y0, y1 = rect0
+    for b in lab_obs_bins:
+        xn = (b - start_time) / (end_time - start_time)
+        xp = x0 + xn * (x1 - x0)
+        ax.plot([xp, xp], [y0, y1], color="green", ls="--", lw=0.8, alpha=0.7, zorder=5)
+
+    # -----------------------------
+    # 3. 2nd-9th subplots : lab scatter plot
+    # -----------------------------
+    
+    # setting for marker size 
+    scale_factor = min(x1 - x0, y1 - y0) / base_scale
+
+    for idx, group_name in enumerate(lab_groups, start=1):
+        if idx >= nrows * ncols:
+            break
+
+        rect = _cell_rect(idx, nrows, ncols, width_px, height_px)
+        sub = lab_df[lab_df[group_col] == group_name]
+
+        group_labs = list(dict.fromkeys(sub[var_col].dropna().tolist()))
+        group_labs = [x for x in group_labs if x in lab_meta]
+
+        draw_scatter_in_cell(
+            ax=ax,
+            sub_df=sub,
+            group_labs=group_labs,
+            lab_meta=lab_meta,
+            cell_rect=rect,
+            time_col=time_col,
+            var_col=var_col,
+            z_col="zvalue",
+            start_time=start_time,
+            end_time=end_time,
+            min_clip=min_clip,
+            max_clip=max_clip,
+            marker_scale=scale_factor,   # 112x112에 맞게 축소
+        )
+
+    # -----------------------------
+    # 4. Clean up and Save
+    # -----------------------------
+
+    fig.savefig(
+        save_path,
+        dpi=dpi,
+        facecolor="white",
+        edgecolor="none",
+        bbox_inches=None,
+        pad_inches=0,
+    )
+    
+    plt.close(fig)

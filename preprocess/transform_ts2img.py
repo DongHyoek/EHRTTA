@@ -3,6 +3,9 @@ import sys
 import numpy as np
 import pandas as pd
 import argparse
+import matplotlib
+# 반드시 plt를 import하기 '전'에 실행해야 합니다.
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 from matplotlib.lines import Line2D
@@ -156,6 +159,10 @@ def set_fig_config():
                         help='the number of max z-value for cliping')
     parser.add_argument("--scatter_ind", default=False, action='store_true',
                         help="option for drawing independent variables in one scatter plot")
+    parser.add_argument("--fig_size", type=int, default=672,
+                        help="default image size")
+    parser.add_argument("--dpi", type=int, default=100,
+                        help="default dpi size")
     return parser
 
 if __name__=="__main__":
@@ -213,6 +220,9 @@ if __name__=="__main__":
     static_df = pd.read_csv(data_dir/'static_df.csv.gz', compression='gzip')
 
     for id in tqdm(static_df['stay_id'].unique()):
+        
+        # if os.path.exists(f"{args.data_path}/images/{id}.png"):
+        #     continue
 
         vital_df, lab_add_df, lab_obs_bins = make_resampled_df(
             df=dynamics_df,
@@ -226,7 +236,7 @@ if __name__=="__main__":
             aggfunc='last'
         )
 
-        create_icu_dashboard(
+        create_icu_dashboard_canvas(
             vital_df = vital_df,
             lab_df = lab_add_df,
             lab_obs_bins = lab_obs_bins,
@@ -238,9 +248,10 @@ if __name__=="__main__":
             save_path=f"{args.data_path}/images/{id}.png",
             start_time=0,
             end_time=(60 / args.freq_min)*24,
-            fig_px=336,
-            dpi=112,
+            fig_px=args.fig_size,
+            dpi=args.dpi,
             min_clip=args.min_clip,
             max_clip=args.max_clip,
-            scatter_ind=args.scatter_ind,
+            grid_layout=(3,3),
+            base_scale=672
         )
